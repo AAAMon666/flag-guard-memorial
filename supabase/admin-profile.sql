@@ -2,12 +2,11 @@
 with selected_user as (
   select id, email
   from auth.users
-  where email = 'admin@example.com'
+  where email = '486302424@qq.com'
 ), selected_role as (
   select id
   from public.roles
-  where name in ('super_admin', '超级管理员')
-  order by case when name = 'super_admin' then 0 else 1 end
+  where name = 'super_admin'
   limit 1
 )
 insert into public.profiles (id, username, display_name, role_id)

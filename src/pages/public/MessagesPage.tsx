@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { hasSupabaseConfig, supabase } from '../../lib/supabase'
 import { defaultSettings, loadSettings } from '../../lib/publicData'
-import type { PublicSettings } from '../../lib/publicData'
+import type { PublicGeneration, PublicSettings } from '../../lib/publicData'
 
 type MessageRecord = {
   id: string
   content: string
   author_name: string
+  generation_id: string | null
   created_at: string
   status: string
 }
@@ -36,6 +37,8 @@ function getClientId() {
 export function MessagesPage() {
   const [content, setContent] = useState('')
   const [authorName, setAuthorName] = useState('')
+  const [generationId, setGenerationId] = useState('')
+  const [generations, setGenerations] = useState<PublicGeneration[]>([])
   const [messages, setMessages] = useState<MessageRecord[]>([])
   const [comments, setComments] = useState<MessageComment[]>([])
   const [likedIds, setLikedIds] = useState<string[]>([])
@@ -58,18 +61,20 @@ export function MessagesPage() {
     setLoading(true)
     const nextSettings = await loadSettings()
     setSettings(nextSettings)
+    const { data: generationData, error: generationError } = await supabase.from('generations').select('id,name,year,description,cover_image,slogan').order('year', { ascending: false })
     const { data: messageData, error: messageError } = await supabase
       .from('messages')
-      .select('id,content,author_name,created_at,status')
+      .select('id,content,author_name,generation_id,created_at,status')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
 
-    if (messageError) {
-      setError(messageError.message)
+    if (generationError || messageError) {
+      setError(generationError?.message ?? messageError?.message ?? '留言数据加载失败。')
       setLoading(false)
       return
     }
 
+    setGenerations(generationData ?? [])
     const messageIds = (messageData ?? []).map((message) => message.id)
     const [likeResult, ownLikeResult, commentResult] = await Promise.all([
       messageIds.length ? supabase.from('message_likes').select('message_id').in('message_id', messageIds) : Promise.resolve({ data: [], error: null }),
@@ -104,12 +109,14 @@ export function MessagesPage() {
     const { error: submitError } = await supabase.from('messages').insert({
       author_name: authorName,
       content,
+      generation_id: generationId || null,
       status: 'approved',
     })
 
     if (submitError) setError(submitError.message)
     else {
       setAuthorName('')
+      setGenerationId('')
       setContent('')
       await loadMessages()
     }
@@ -150,15 +157,19 @@ export function MessagesPage() {
   return (
     <div className="page-stack narrow">
       <div className="page-heading">
-        <span className="eyebrow">Message Wall</span>
+        <span className="eyebrow">留言纪念</span>
         <h1>留言与寄语</h1>
-        <p>留言提交后会立即展示，欢迎为留言点赞或继续评论。</p>
+        <p>留言提交后会立即展示，选择届次后也会同步显示在对应届次详情页。</p>
       </div>
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="section-card form-card">
         <div className="section-title"><h2>写下留言</h2><span>{hasSupabaseConfig ? settings.messageEnabled ? '已开放' : '已关闭' : '未配置'}</span></div>
         <form className="form-card" onSubmit={submitMessage}>
           <input value={authorName} onChange={(event) => setAuthorName(event.target.value)} placeholder="你的署名" disabled={!hasSupabaseConfig || !settings.messageEnabled} required />
+          <select value={generationId} onChange={(event) => setGenerationId(event.target.value)} disabled={!hasSupabaseConfig || !settings.messageEnabled}>
+            <option value="">不关联届次</option>
+            {generations.map((generation) => <option key={generation.id} value={generation.id}>{generation.name}</option>)}
+          </select>
           <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写给队伍、某一届或某位成员的话" disabled={!hasSupabaseConfig || !settings.messageEnabled} required />
           <button disabled={!hasSupabaseConfig || !settings.messageEnabled || submitting}>{submitting ? '提交中...' : '提交留言'}</button>
         </form>
@@ -169,7 +180,7 @@ export function MessagesPage() {
           const form = commentForms[message.id] ?? { authorName: '', content: '' }
           return (
             <article className="message-card" key={message.id}>
-              <blockquote>{message.content}<cite>— {message.author_name} · {new Date(message.created_at).toLocaleDateString()}</cite></blockquote>
+              <blockquote>{message.content}<cite>— {message.author_name} · {generations.find((generation) => generation.id === message.generation_id)?.name ?? '未关联届次'} · {new Date(message.created_at).toLocaleDateString()}</cite></blockquote>
               <div className="message-actions">
                 <button type="button" className="secondary-button" disabled={likedIds.includes(message.id)} onClick={() => likeMessage(message.id)}>{likedIds.includes(message.id) ? '已点赞' : '点赞'}（{likeCounts[message.id] ?? 0}）</button>
                 <span>{messageComments.length} 条评论</span>

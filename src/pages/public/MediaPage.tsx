@@ -13,6 +13,7 @@ type MediaRecord = {
   cover_url: string | null
   generation_id: string | null
   activity_name: string | null
+  taken_date: string | null
   year: number | null
   tags: string[]
   is_public: boolean
@@ -25,9 +26,8 @@ const emptyUploadForm = {
   title: '',
   type: 'image' as 'image' | 'video',
   generationId: '',
-  activityName: '',
-  year: new Date().getFullYear(),
-  tags: '',
+  uploaderName: '',
+  takenDate: '',
 }
 
 export function MediaPage() {
@@ -56,7 +56,7 @@ export function MediaPage() {
     setLoading(true)
     const [generationResult, mediaResult, nextSettings] = await Promise.all([
       supabase.from('generations').select('id,name').order('year', { ascending: false }),
-      supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,activity_name,year,tags,is_public').eq('is_public', true).order('created_at', { ascending: false }),
+      supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,activity_name,taken_date,year,tags,is_public').eq('is_public', true).order('created_at', { ascending: false }),
       loadSettings(),
     ])
 
@@ -107,9 +107,10 @@ export function MediaPage() {
       title: form.title,
       file_url: data.publicUrl,
       generation_id: form.generationId || null,
-      activity_name: form.activityName || null,
-      year: form.year || null,
-      tags: form.tags.split(/[,，\s]+/).map((tag) => tag.trim()).filter(Boolean),
+      activity_name: form.uploaderName || null,
+      taken_date: form.takenDate || null,
+      year: form.takenDate ? Number(form.takenDate.slice(0, 4)) : null,
+      tags: form.takenDate ? [form.takenDate] : [],
       is_public: true,
     })
 
@@ -125,9 +126,9 @@ export function MediaPage() {
   return (
     <div className="page-stack narrow">
       <div className="page-heading">
-        <span className="eyebrow">Media</span>
+        <span className="eyebrow">媒体资料</span>
         <h1>图片与视频资料</h1>
-        <p>支持按届次和类型筛选，也可以直接上传照片或视频留存。图片最多 10MB，视频最多 100MB。</p>
+        <p>支持按届次和类型筛选，也可以直接上传照片或视频留存。选择届次后，资料会显示在对应届次详情页。图片最多 10MB，视频最多 100MB。</p>
       </div>
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="section-card form-card">
@@ -142,9 +143,8 @@ export function MediaPage() {
             <option value="">不关联届次</option>
             {generations.map((generation) => <option key={generation.id} value={generation.id}>{generation.name}</option>)}
           </select>
-          <input value={form.activityName} onChange={(event) => setForm({ ...form, activityName: event.target.value })} placeholder="活动名称" disabled={!hasSupabaseConfig || !uploadEnabled} />
-          <input value={form.year} onChange={(event) => setForm({ ...form, year: Number(event.target.value) })} type="number" placeholder="年份" disabled={!hasSupabaseConfig || !uploadEnabled} />
-          <input value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="标签，用逗号或空格分隔" disabled={!hasSupabaseConfig || !uploadEnabled} />
+          <input value={form.uploaderName} onChange={(event) => setForm({ ...form, uploaderName: event.target.value })} placeholder="上传者姓名" disabled={!hasSupabaseConfig || !uploadEnabled} />
+          <input value={form.takenDate} onChange={(event) => setForm({ ...form, takenDate: event.target.value })} type="date" placeholder="日期" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input type="file" accept={form.type === 'image' ? 'image/*' : 'video/*'} onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)} disabled={!hasSupabaseConfig || !uploadEnabled} required />
           <small>当前{form.type === 'image' ? '图片' : '视频'}最多支持 {form.type === 'image' ? '10MB' : '100MB'}。</small>
           <div className="form-actions"><button disabled={!hasSupabaseConfig || !uploadEnabled || uploading}>{uploading ? '上传中...' : '上传并发布'}</button></div>
@@ -167,8 +167,8 @@ export function MediaPage() {
             {item.type === 'video' ? <video src={item.file_url} poster={item.cover_url ?? undefined} controls /> : <img src={item.file_url} alt={item.title} />}
             <div>
               <strong>{item.title}</strong>
-              <span>{item.activity_name ?? '未填写活动'} · {item.year ?? '未填写年份'}</span>
-              <div className="tag-list">{item.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>
+              <span>上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
+              <div className="tag-list">{item.generation_id && <em>{generations.find((generation) => generation.id === item.generation_id)?.name}</em>}</div>
               {item.type === 'image' && <a href={item.file_url} download target="_blank" rel="noreferrer">下载图片</a>}
             </div>
           </article>

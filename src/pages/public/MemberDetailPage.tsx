@@ -69,15 +69,16 @@ export function MemberDetailPage() {
   return (
     <div className="page-stack narrow">
       <section className="profile-hero section-card">
-        <img src={member.avatar ?? ''} alt={member.name} />
+        {member.avatar ? <img src={member.avatar} alt={member.name} /> : <div className="avatar-placeholder large">{member.name.slice(0, 1)}</div>}
         <div>
-          <span className="eyebrow">Member Profile</span>
+          <span className="eyebrow">成员资料</span>
           <h1>{member.name}</h1>
           <p>{member.bio}</p>
           <div className="profile-meta">
             <span>{data.colleges.find((item) => item.id === member.college_id)?.name}</span>
             <span>{data.majors.find((item) => item.id === member.major_id)?.name}</span>
             <span>{data.classes.find((item) => item.id === member.class_id)?.name}</span>
+            <span>性别：{member.gender || '未填写'}</span>
             <span>{member.retired_status ? '已退役' : '在队'}</span>
             <span>手机号：{member.phone ? maskPhone(member.phone, false) : '未填写'}</span>
           </div>

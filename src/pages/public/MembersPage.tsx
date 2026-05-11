@@ -47,7 +47,7 @@ export function MembersPage() {
   return (
     <div className="page-stack narrow">
       <div className="page-heading">
-        <span className="eyebrow">Members</span>
+        <span className="eyebrow">成员资料</span>
         <h1>成员查询</h1>
         <p>通过学院、班级、姓名快速定位成员资料；公开页手机号默认脱敏显示。</p>
       </div>
@@ -66,9 +66,10 @@ export function MembersPage() {
       <section className="member-grid">
         {filteredMembers.map((member) => (
           <Link className="member-card" to={`/members/${member.id}`} key={member.id}>
-            <img src={member.avatar ?? ''} alt={member.name} />
+            {member.avatar ? <img src={member.avatar} alt={member.name} /> : <div className="avatar-placeholder card-avatar">{member.name.slice(0, 1)}</div>}
             <strong>{member.name}</strong>
             <span>{colleges.find((item) => item.id === member.college_id)?.name}</span>
+            <span>{member.gender || '未填写性别'} · {member.retired_status ? '已退役' : '在队'}</span>
             <div className="tag-list">{member.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>
           </Link>
         ))}

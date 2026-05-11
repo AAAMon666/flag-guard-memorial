@@ -62,7 +62,7 @@ export function HomePage() {
       </section>
 
       <section className="section-card">
-        <div className="section-title"><div><span className="eyebrow">Generations</span><h2>届次入口</h2></div><Link to="/generations">查看全部</Link></div>
+        <div className="section-title"><div><span className="eyebrow">届次档案</span><h2>届次入口</h2></div><Link to="/generations">查看全部</Link></div>
         <div className="card-grid three">
           {data.generations.map((generation) => (
             <Link className="generation-card" to={`/generations/${generation.id}`} key={generation.id}>
@@ -76,12 +76,12 @@ export function HomePage() {
 
       <section className="split-grid">
         <div className="section-card">
-          <div className="section-title"><div><span className="eyebrow">Search</span><h2>快速成员查询</h2></div><Search size={22} /></div>
+          <div className="section-title"><div><span className="eyebrow">成员查询</span><h2>快速成员查询</h2></div><Search size={22} /></div>
           <p>按学院、班级、姓名定位成员个人页，支持一名成员关联多个届次与不同身份标签。</p>
           <Link className="primary-button compact" to="/members">进入查询</Link>
         </div>
         <div className="section-card message-wall">
-          <div className="section-title"><div><span className="eyebrow">Messages</span><h2>留言精选</h2></div></div>
+          <div className="section-title"><div><span className="eyebrow">留言纪念</span><h2>留言精选</h2></div></div>
           {data.messages.slice(0, 3).map((message) => <blockquote key={message.id}>{message.content}<cite>— {message.author_name}</cite></blockquote>)}
         </div>
       </section>

@@ -11,8 +11,9 @@ type GenerationForm = Omit<GenerationRecord, 'id'>
 type CollegeRecord = { id: string; name: string }
 type MajorRecord = { id: string; college_id: string; name: string }
 type ClassRecord = { id: string; college_id: string; major_id: string | null; name: string }
-type MemberRecord = { id: string; name: string; college_id: string | null; major_id: string | null; class_id: string | null; phone: string | null; retired_status: boolean; avatar: string | null; bio: string }
+type MemberRecord = { id: string; name: string; college_id: string | null; major_id: string | null; class_id: string | null; phone: string | null; gender: string; retired_status: boolean; avatar: string | null; bio: string }
 type TagRecord = { id: string; name: string; description: string }
+type MemberGenerationRecord = { id: string; member_id: string; generation_id: string; remark: string }
 type AdminMediaRecord = { id: string; title: string; type: 'image' | 'video'; activity_name: string | null; is_public: boolean }
 type AdminMessageRecord = { id: string; author_name: string; content: string; created_at: string }
 
@@ -22,13 +23,16 @@ type MemberForm = {
   major_id: string
   class_id: string
   phone: string
-  avatar: string
+  gender: string
   bio: string
+  generation_id: string
+  identity_tag_id: string
+  generation_remark: string
   retired_status: boolean
 }
 
 const emptyGenerationForm: GenerationForm = { name: '', year: new Date().getFullYear(), description: '', cover_image: '', slogan: '' }
-const emptyMemberForm: MemberForm = { name: '', college_id: '', major_id: '', class_id: '', phone: '', avatar: '', bio: '', retired_status: false }
+const emptyMemberForm: MemberForm = { name: '', college_id: '', major_id: '', class_id: '', phone: '', gender: '', bio: '', generation_id: '', identity_tag_id: '', generation_remark: '', retired_status: false }
 
 export function AdminDashboardPage() {
   const [stats, setStats] = useState<Array<[string, number]>>([['届次', 0], ['成员', 0], ['媒体', 0], ['留言', 0]])
@@ -73,6 +77,7 @@ export function AdminGenerationsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [error, setError] = useState('')
 
   async function loadGenerations() {
@@ -91,14 +96,27 @@ export function AdminGenerationsPage() {
     setForm({ name: item.name, year: item.year, description: item.description, cover_image: item.cover_image ?? '', slogan: item.slogan })
   }
 
-  function resetForm() { setEditingId(null); setForm(emptyGenerationForm) }
+  function resetForm() { setEditingId(null); setCoverFile(null); setForm(emptyGenerationForm) }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!supabase) return
     setSaving(true)
     setError('')
-    const payload = { ...form, cover_image: form.cover_image || null }
+    let coverImage = form.cover_image || null
+    if (coverFile) {
+      const extension = coverFile.name.split('.').pop() ?? 'jpg'
+      const filePath = `generation-covers/${crypto.randomUUID()}.${extension}`
+      const uploadResult = await supabase.storage.from('media').upload(filePath, coverFile)
+      if (uploadResult.error) {
+        setError(uploadResult.error.message)
+        setSaving(false)
+        return
+      }
+      const { data } = supabase.storage.from('media').getPublicUrl(filePath)
+      coverImage = data.publicUrl
+    }
+    const payload = { ...form, cover_image: coverImage }
     const result = editingId ? await supabase.from('generations').update(payload).eq('id', editingId) : await supabase.from('generations').insert(payload)
     if (result.error) setError(result.error.message)
     else { resetForm(); await loadGenerations() }
@@ -122,7 +140,7 @@ export function AdminGenerationsPage() {
           <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="届次名称" required />
           <input value={form.year} onChange={(event) => setForm({ ...form, year: Number(event.target.value) })} placeholder="年份" type="number" required />
           <input value={form.slogan} onChange={(event) => setForm({ ...form, slogan: event.target.value })} placeholder="口号" />
-          <input value={form.cover_image ?? ''} onChange={(event) => setForm({ ...form, cover_image: event.target.value })} placeholder="封面图 URL" />
+          <label className="file-field"><span>上传封面照片</span><input type="file" accept="image/*" onChange={(event) => setCoverFile(event.target.files?.[0] ?? null)} /></label>
           <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="届次简介" />
           <div className="form-actions"><button disabled={saving}>{saving ? '保存中...' : editingId ? '保存修改' : '新增届次'}</button>{editingId && <button type="button" className="secondary-button" onClick={resetForm}>取消编辑</button>}</div>
         </form>
@@ -137,20 +155,26 @@ export function AdminMembersPage() {
   const [colleges, setColleges] = useState<CollegeRecord[]>([])
   const [majors, setMajors] = useState<MajorRecord[]>([])
   const [classes, setClasses] = useState<ClassRecord[]>([])
+  const [generations, setGenerations] = useState<GenerationRecord[]>([])
+  const [tags, setTags] = useState<TagRecord[]>([])
+  const [relations, setRelations] = useState<MemberGenerationRecord[]>([])
   const [form, setForm] = useState<MemberForm>(emptyMemberForm)
   const [error, setError] = useState('')
 
   async function loadMembers() {
     if (!supabase) { setError('尚未配置 Supabase，无法管理成员。'); return }
-    const [memberResult, collegeResult, majorResult, classResult] = await Promise.all([
-      supabase.from('members').select('id,name,college_id,major_id,class_id,phone,retired_status,avatar,bio').order('created_at', { ascending: false }),
+    const [memberResult, collegeResult, majorResult, classResult, generationResult, tagResult, relationResult] = await Promise.all([
+      supabase.from('members').select('id,name,college_id,major_id,class_id,phone,gender,retired_status,avatar,bio').order('created_at', { ascending: false }),
       supabase.from('colleges').select('id,name').order('name'),
       supabase.from('majors').select('id,college_id,name').order('name'),
       supabase.from('classes').select('id,college_id,major_id,name').order('name'),
+      supabase.from('generations').select('id,name,year,description,cover_image,slogan').order('year', { ascending: false }),
+      supabase.from('identity_tags').select('id,name,description').order('name'),
+      supabase.from('member_generations').select('id,member_id,generation_id,remark'),
     ])
-    const firstError = memberResult.error ?? collegeResult.error ?? majorResult.error ?? classResult.error
+    const firstError = memberResult.error ?? collegeResult.error ?? majorResult.error ?? classResult.error ?? generationResult.error ?? tagResult.error ?? relationResult.error
     if (firstError) setError(firstError.message)
-    else { setItems(memberResult.data ?? []); setColleges(collegeResult.data ?? []); setMajors(majorResult.data ?? []); setClasses(classResult.data ?? []); setError('') }
+    else { setItems(memberResult.data ?? []); setColleges(collegeResult.data ?? []); setMajors(majorResult.data ?? []); setClasses(classResult.data ?? []); setGenerations(generationResult.data ?? []); setTags(tagResult.data ?? []); setRelations(relationResult.data ?? []); setError('') }
   }
 
   useEffect(() => { loadMembers() }, [])
@@ -158,9 +182,42 @@ export function AdminMembersPage() {
   async function addMember(event: React.FormEvent) {
     event.preventDefault()
     if (!supabase) return
-    const { error: addError } = await supabase.from('members').insert({ ...form, college_id: form.college_id || null, major_id: form.major_id || null, class_id: form.class_id || null, phone: form.phone || null, avatar: form.avatar || null })
-    if (addError) setError(addError.message)
-    else { setForm(emptyMemberForm); await loadMembers() }
+    const { data: memberData, error: addError } = await supabase.from('members').insert({
+      name: form.name,
+      college_id: form.college_id || null,
+      major_id: form.major_id || null,
+      class_id: form.class_id || null,
+      phone: form.phone || null,
+      gender: form.gender,
+      bio: form.bio,
+      retired_status: form.retired_status,
+    }).select('id').single()
+    if (addError) {
+      setError(addError.message)
+      return
+    }
+
+    if (form.generation_id && memberData) {
+      const { data: relationData, error: relationError } = await supabase.from('member_generations').insert({
+        member_id: memberData.id,
+        generation_id: form.generation_id,
+        remark: form.generation_remark,
+      }).select('id').single()
+      if (relationError) {
+        setError(relationError.message)
+        return
+      }
+      if (form.identity_tag_id && relationData) {
+        const { error: tagError } = await supabase.from('member_generation_tags').insert({ member_generation_id: relationData.id, identity_tag_id: form.identity_tag_id })
+        if (tagError) {
+          setError(tagError.message)
+          return
+        }
+      }
+    }
+
+    setForm(emptyMemberForm)
+    await loadMembers()
   }
 
   async function deleteMember(id: string) {
@@ -180,12 +237,19 @@ export function AdminMembersPage() {
         <select value={form.college_id} onChange={(event) => setForm({ ...form, college_id: event.target.value, major_id: '', class_id: '' })}><option value="">不关联学院</option>{colleges.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <select value={form.major_id} onChange={(event) => setForm({ ...form, major_id: event.target.value })}><option value="">不关联专业</option>{majors.filter((item) => !form.college_id || item.college_id === form.college_id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <select value={form.class_id} onChange={(event) => setForm({ ...form, class_id: event.target.value })}><option value="">不关联班级</option>{classes.filter((item) => !form.college_id || item.college_id === form.college_id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <input value={form.avatar} onChange={(event) => setForm({ ...form, avatar: event.target.value })} placeholder="头像 URL" />
+        <select value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value })} required><option value="">选择性别</option><option value="男">男</option><option value="女">女</option><option value="其他">其他</option></select>
+        <select value={form.generation_id} onChange={(event) => setForm({ ...form, generation_id: event.target.value })}><option value="">不关联届次</option>{generations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <select value={form.identity_tag_id} onChange={(event) => setForm({ ...form, identity_tag_id: event.target.value })} disabled={!form.generation_id}><option value="">不关联身份标签</option>{tags.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <input value={form.generation_remark} onChange={(event) => setForm({ ...form, generation_remark: event.target.value })} placeholder="届次备注，例如队长、队员、训练骨干" disabled={!form.generation_id} />
         <textarea value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} placeholder="简介" />
         <label><input type="checkbox" checked={form.retired_status} onChange={(event) => setForm({ ...form, retired_status: event.target.checked })} /> 已退役</label>
         <div className="form-actions"><button>添加成员</button></div>
       </form></section>
-      <ActionAdminTable title="成员列表" error="" headers={['姓名', '学院', '专业', '班级', '手机号', '状态']} rows={items.map((item) => ({ id: item.id, cells: [item.name, colleges.find((college) => college.id === item.college_id)?.name, majors.find((major) => major.id === item.major_id)?.name, classes.find((classInfo) => classInfo.id === item.class_id)?.name, item.phone ?? '', item.retired_status ? '已退役' : '在队'] }))} onDelete={deleteMember} />
+      <ActionAdminTable title="成员列表" error="" headers={['姓名', '学院', '专业', '班级', '性别', '所属届次', '手机号', '状态']} rows={items.map((item) => {
+        const memberRelations = relations.filter((relation) => relation.member_id === item.id)
+        const generationNames = memberRelations.map((relation) => generations.find((generation) => generation.id === relation.generation_id)?.name).filter(Boolean).join('、')
+        return { id: item.id, cells: [item.name, colleges.find((college) => college.id === item.college_id)?.name, majors.find((major) => major.id === item.major_id)?.name, classes.find((classInfo) => classInfo.id === item.class_id)?.name, item.gender, generationNames || '未关联', item.phone ?? '', item.retired_status ? '已退役' : '在队'] }
+      })} onDelete={deleteMember} />
     </div>
   )
 }
@@ -264,7 +328,7 @@ export function AdminMediaPage() {
   async function loadMedia() { if (!supabase) { setError('尚未配置 Supabase，无法管理媒体。'); return } const { data, error: loadError } = await supabase.from('media_items').select('id,title,type,activity_name,is_public').order('created_at', { ascending: false }); if (loadError) setError(loadError.message); else { setItems(data ?? []); setError('') } }
   useEffect(() => { loadMedia() }, [])
   async function deleteMedia(id: string) { if (!supabase || !window.confirm('确定删除这条媒体记录吗？')) return; const { error: deleteError } = await supabase.from('media_items').delete().eq('id', id); if (deleteError) setError(deleteError.message); else await loadMedia() }
-  return <ActionAdminTable title="媒体管理" error={error} headers={['标题', '类型', '活动', '公开']} rows={items.map((item) => ({ id: item.id, cells: [item.title, item.type === 'video' ? '视频' : '图片', item.activity_name ?? '', item.is_public ? '是' : '否'] }))} onDelete={deleteMedia} />
+  return <ActionAdminTable title="媒体管理" error={error} headers={['标题', '类型', '上传者', '公开']} rows={items.map((item) => ({ id: item.id, cells: [item.title, item.type === 'video' ? '视频' : '图片', item.activity_name ?? '', item.is_public ? '是' : '否'] }))} onDelete={deleteMedia} />
 }
 
 export function AdminMessagesPage() {

@@ -16,6 +16,7 @@ export type PublicMember = {
   major_id: string | null
   class_id: string | null
   phone: string | null
+  gender: string
   retired_status: boolean
   avatar: string | null
   bio: string
@@ -37,6 +38,7 @@ export type PublicMedia = {
   generation_id: string | null
   member_id: string | null
   activity_name: string | null
+  taken_date: string | null
   year: number | null
   tags: string[]
   is_public: boolean
@@ -69,14 +71,14 @@ export async function loadPublicData() {
 
   const [generations, members, colleges, majors, classes, tags, memberGenerations, memberGenerationTags, media, messages, settings] = await Promise.all([
     supabase.from('generations').select('id,name,year,description,cover_image,slogan').order('year', { ascending: false }),
-    supabase.from('members').select('id,name,college_id,major_id,class_id,phone,retired_status,avatar,bio').order('created_at', { ascending: false }),
+    supabase.from('members').select('id,name,college_id,major_id,class_id,phone,gender,retired_status,avatar,bio').order('created_at', { ascending: false }),
     supabase.from('colleges').select('id,name').order('name'),
     supabase.from('majors').select('id,college_id,name').order('name'),
     supabase.from('classes').select('id,college_id,major_id,name').order('name'),
     supabase.from('identity_tags').select('id,name,description').order('name'),
     supabase.from('member_generations').select('id,member_id,generation_id,remark'),
     supabase.from('member_generation_tags').select('member_generation_id,identity_tag_id'),
-    supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,member_id,activity_name,year,tags,is_public').eq('is_public', true).order('created_at', { ascending: false }),
+    supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,member_id,activity_name,taken_date,year,tags,is_public').eq('is_public', true).order('created_at', { ascending: false }),
     supabase.from('messages').select('id,content,author_name,member_id,generation_id,status,created_at').eq('status', 'approved').order('created_at', { ascending: false }),
     loadSettings(),
   ])
