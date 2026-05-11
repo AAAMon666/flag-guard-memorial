@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createHashRouter, RouterProvider } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { AdminLayout } from './components/AdminLayout'
 import { HomePage } from './pages/public/HomePage'
@@ -22,7 +22,7 @@ import {
   AdminTaxonomyPage,
 } from './pages/admin/AdminPages'
 
-const router = createBrowserRouter([
+const router = createHashRouter([
   {
     path: '/',
     element: <Layout />,
