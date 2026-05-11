@@ -1,4 +1,5 @@
-import { createHashRouter, RouterProvider } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { createHashRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { AdminLayout } from './components/AdminLayout'
 import { HomePage } from './pages/public/HomePage'
@@ -9,6 +10,8 @@ import { MemberDetailPage } from './pages/public/MemberDetailPage'
 import { MediaPage } from './pages/public/MediaPage'
 import { MessagesPage } from './pages/public/MessagesPage'
 import { LoginPage } from './pages/public/LoginPage'
+import { hasSupabaseConfig } from './lib/supabase'
+import { useAuth } from './lib/AuthContext'
 import {
   AdminDashboardPage,
   AdminGenerationsPage,
@@ -37,7 +40,7 @@ const router = createHashRouter([
       { path: 'login', element: <LoginPage /> },
       {
         path: 'admin',
-        element: <AdminLayout />,
+        element: <ProtectedRoute><AdminLayout /></ProtectedRoute>,
         children: [
           { index: true, element: <AdminDashboardPage /> },
           { path: 'generations', element: <AdminGenerationsPage /> },
@@ -54,6 +57,16 @@ const router = createHashRouter([
     ],
   },
 ])
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { loading, session } = useAuth()
+
+  if (!hasSupabaseConfig) return <Navigate to="/login" replace />
+  if (loading) return <div className="page-stack narrow"><section className="section-card">正在检查登录状态...</section></div>
+  if (!session) return <Navigate to="/login" replace />
+
+  return children
+}
 
 export default function App() {
   return <RouterProvider router={router} />
