@@ -1,16 +1,52 @@
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { generations, identityTags, mediaItems, members, messages } from '../../data/demo'
+import { hasSupabaseConfig } from '../../lib/supabase'
+import { loadPublicData } from '../../lib/publicData'
+import type { PublicGeneration, PublicMedia, PublicMember, PublicMessage } from '../../lib/publicData'
+
+type GenerationMember = PublicMember & { remark: string; tags: string[] }
 
 export function GenerationDetailPage() {
   const { id } = useParams()
-  const generation = generations.find((item) => item.id === id) ?? generations[0]
-  const generationMembers = members.filter((member) => member.generations.some((item) => item.generationId === generation.id))
-  const generationMedia = mediaItems.filter((item) => item.generationId === generation.id)
-  const generationMessages = messages.filter((item) => item.generationId === generation.id && item.status === 'approved')
+  const [generation, setGeneration] = useState<PublicGeneration | null>(null)
+  const [members, setMembers] = useState<GenerationMember[]>([])
+  const [media, setMedia] = useState<PublicMedia[]>([])
+  const [messages, setMessages] = useState<PublicMessage[]>([])
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!hasSupabaseConfig) {
+      setError('尚未配置 Supabase，无法加载真实届次详情。')
+      return
+    }
+
+    loadPublicData()
+      .then((data) => {
+        const current = data.generations.find((item) => item.id === id) ?? null
+        setGeneration(current)
+        if (!current) return
+
+        const relations = data.memberGenerations.filter((item) => item.generation_id === current.id)
+        setMembers(relations.map((relation) => {
+          const member = data.members.find((item) => item.id === relation.member_id)
+          const tagIds = data.memberGenerationTags.filter((item) => item.member_generation_id === relation.id).map((item) => item.identity_tag_id)
+          const tags = tagIds.map((tagId) => data.tags.find((tag) => tag.id === tagId)?.name).filter((tag): tag is string => Boolean(tag))
+          return member ? { ...member, remark: relation.remark, tags } : null
+        }).filter((member): member is GenerationMember => Boolean(member)))
+        setMedia(data.media.filter((item) => item.generation_id === current.id))
+        setMessages(data.messages.filter((item) => item.generation_id === current.id))
+        setError('')
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : '届次详情加载失败。'))
+  }, [id])
+
+  if (!generation) {
+    return <div className="page-stack narrow">{error && <section className="section-card status-warn">{error}</section>}<section className="section-card">该届次不存在或已被删除。</section></div>
+  }
 
   return (
     <div className="page-stack narrow">
-      <section className="detail-hero" style={{ backgroundImage: `linear-gradient(90deg, rgba(72, 0, 0, .88), rgba(72, 0, 0, .35)), url(${generation.coverImage})` }}>
+      <section className="detail-hero" style={{ backgroundImage: `linear-gradient(90deg, rgba(72, 0, 0, .88), rgba(72, 0, 0, .35)), url(${generation.cover_image ?? ''})` }}>
         <span>{generation.year}</span>
         <h1>{generation.name}</h1>
         <p>{generation.description}</p>
@@ -18,30 +54,26 @@ export function GenerationDetailPage() {
       </section>
 
       <section className="section-card">
-        <div className="section-title"><h2>成员名单</h2><span>{generationMembers.length} 人</span></div>
+        <div className="section-title"><h2>成员名单</h2><span>{members.length} 人</span></div>
         <div className="member-list">
-          {generationMembers.map((member) => {
-            const relation = member.generations.find((item) => item.generationId === generation.id)
-            const tags = relation?.tagIds.map((tagId) => identityTags.find((tag) => tag.id === tagId)?.name).filter(Boolean)
-            return (
-              <Link className="member-row" key={member.id} to={`/members/${member.id}`}>
-                <img src={member.avatar} alt={member.name} />
-                <div><strong>{member.name}</strong><span>{relation?.remark}</span></div>
-                <div className="tag-list">{tags?.map((tag) => <em key={tag}>{tag}</em>)}</div>
-              </Link>
-            )
-          })}
+          {members.map((member) => (
+            <Link className="member-row" key={member.id} to={`/members/${member.id}`}>
+              <img src={member.avatar ?? ''} alt={member.name} />
+              <div><strong>{member.name}</strong><span>{member.remark}</span></div>
+              <div className="tag-list">{member.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>
+            </Link>
+          ))}
         </div>
       </section>
 
       <section className="section-card">
         <div className="section-title"><h2>图片 / 视频</h2><Link to="/media">更多媒体</Link></div>
         <div className="card-grid three">
-          {generationMedia.map((item) => (
+          {media.map((item) => (
             <article className="media-card" key={item.id}>
-              <img src={item.coverUrl ?? item.fileUrl} alt={item.title} />
+              <img src={item.cover_url ?? item.file_url} alt={item.title} />
               <strong>{item.title}</strong>
-              <span>{item.type === 'video' ? '视频' : '图片'} · {item.activityName}</span>
+              <span>{item.type === 'video' ? '视频' : '图片'} · {item.activity_name}</span>
             </article>
           ))}
         </div>
@@ -49,9 +81,7 @@ export function GenerationDetailPage() {
 
       <section className="section-card message-wall">
         <div className="section-title"><h2>留言 / 祝福</h2></div>
-        {generationMessages.length ? generationMessages.map((message) => (
-          <blockquote key={message.id}>{message.content}<cite>— {message.authorName}</cite></blockquote>
-        )) : <p>暂无该届留言，后台审核通过后将在此展示。</p>}
+        {messages.length ? messages.map((message) => <blockquote key={message.id}>{message.content}<cite>— {message.author_name}</cite></blockquote>) : <p>暂无该届留言。</p>}
       </section>
     </div>
   )
