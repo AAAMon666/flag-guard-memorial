@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useAuth } from '../lib/AuthContext'
 
 const adminLinks = [
   { to: '/admin', label: '控制台' },
@@ -14,6 +15,14 @@ const adminLinks = [
 ]
 
 export function AdminLayout() {
+  const navigate = useNavigate()
+  const { session, signOut } = useAuth()
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login')
+  }
+
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
@@ -28,6 +37,10 @@ export function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+        <div className="admin-user-card">
+          <span>{session?.user.email}</span>
+          <button onClick={handleSignOut}>退出登录</button>
+        </div>
       </aside>
       <section className="admin-content">
         <Outlet />
