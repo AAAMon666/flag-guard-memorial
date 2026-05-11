@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { hasSupabaseConfig, supabase } from '../../lib/supabase'
+import { defaultSettings, loadSettings } from '../../lib/publicData'
+import type { PublicSettings } from '../../lib/publicData'
 
 type MessageRecord = {
   id: string
@@ -39,6 +41,7 @@ export function MessagesPage() {
   const [likedIds, setLikedIds] = useState<string[]>([])
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({})
   const [commentForms, setCommentForms] = useState<Record<string, CommentForm>>({})
+  const [settings, setSettings] = useState<PublicSettings>(defaultSettings)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -53,6 +56,8 @@ export function MessagesPage() {
     }
 
     setLoading(true)
+    const nextSettings = await loadSettings()
+    setSettings(nextSettings)
     const { data: messageData, error: messageError } = await supabase
       .from('messages')
       .select('id,content,author_name,created_at,status')
@@ -92,7 +97,7 @@ export function MessagesPage() {
 
   async function submitMessage(event: React.FormEvent) {
     event.preventDefault()
-    if (!supabase) return
+    if (!supabase || !settings.messageEnabled) return
 
     setSubmitting(true)
     setError('')
@@ -151,11 +156,11 @@ export function MessagesPage() {
       </div>
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="section-card form-card">
-        <div className="section-title"><h2>写下留言</h2><span>{hasSupabaseConfig ? '已开放' : '未配置'}</span></div>
+        <div className="section-title"><h2>写下留言</h2><span>{hasSupabaseConfig ? settings.messageEnabled ? '已开放' : '已关闭' : '未配置'}</span></div>
         <form className="form-card" onSubmit={submitMessage}>
-          <input value={authorName} onChange={(event) => setAuthorName(event.target.value)} placeholder="你的署名" disabled={!hasSupabaseConfig} required />
-          <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写给队伍、某一届或某位成员的话" disabled={!hasSupabaseConfig} required />
-          <button disabled={!hasSupabaseConfig || submitting}>{submitting ? '提交中...' : '提交留言'}</button>
+          <input value={authorName} onChange={(event) => setAuthorName(event.target.value)} placeholder="你的署名" disabled={!hasSupabaseConfig || !settings.messageEnabled} required />
+          <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写给队伍、某一届或某位成员的话" disabled={!hasSupabaseConfig || !settings.messageEnabled} required />
+          <button disabled={!hasSupabaseConfig || !settings.messageEnabled || submitting}>{submitting ? '提交中...' : '提交留言'}</button>
         </form>
       </section>
       <section className="section-card message-wall">
