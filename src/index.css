@@ -111,6 +111,13 @@ th, td { text-align: left; padding: 14px; border-bottom: 1px solid #f0dfb9; vert
 th { color: #540000; background: #fff7e6; }
 td button { padding: 8px 12px; margin-right: 6px; box-shadow: none; }
 button.danger { background: #6b1c1c; }
+.secondary-button { background: #84605a; box-shadow: none; }
+.admin-user-card { display: grid; gap: 10px; margin-top: 18px; padding: 14px; border-radius: 16px; background: rgba(255,255,255,.1); }
+.admin-user-card span { color: #ffe9b5; font-size: 13px; word-break: break-all; }
+.admin-user-card button { box-shadow: none; justify-content: center; }
+.generation-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.generation-form textarea, .generation-form .form-actions { grid-column: 1 / -1; }
+.form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .check-list { display: grid; gap: 10px; }
 .settings-grid { display: grid; gap: 14px; }
 .settings-grid label { display: flex; align-items: center; gap: 10px; }
@@ -121,5 +128,6 @@ button.danger { background: #6b1c1c; }
   .hero-section, .split-grid, .card-grid.two, .card-grid.three, .metric-grid, .filter-panel, .member-grid, .media-grid, .admin-shell, .profile-hero { grid-template-columns: 1fr; }
   .generation-card.large, .member-row { grid-template-columns: 1fr; }
   .detail-hero h1 { font-size: 42px; }
+  .generation-form { grid-template-columns: 1fr; }
   .admin-sidebar { position: static; }
 }
