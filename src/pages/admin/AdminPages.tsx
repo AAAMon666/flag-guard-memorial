@@ -1,6 +1,27 @@
+import { useEffect, useState } from 'react'
 import { exportMembers } from '../../lib/excel'
 import { can, defaultRole } from '../../lib/auth'
+import { supabase } from '../../lib/supabase'
 import { classes, colleges, generations, identityTags, mediaItems, members, messages, roles, systemSettings } from '../../data/demo'
+
+type GenerationRecord = {
+  id: string
+  name: string
+  year: number
+  description: string
+  cover_image: string | null
+  slogan: string
+}
+
+type GenerationForm = Omit<GenerationRecord, 'id'>
+
+const emptyGenerationForm: GenerationForm = {
+  name: '',
+  year: new Date().getFullYear(),
+  description: '',
+  cover_image: '',
+  slogan: '',
+}
 
 const stats = [
   ['届次', generations.length],
@@ -30,7 +51,116 @@ export function AdminDashboardPage() {
 }
 
 export function AdminGenerationsPage() {
-  return <AdminTable title="届次管理" headers={['届次', '年份', '简介']} rows={generations.map((item) => [item.name, item.year, item.description])} />
+  const [items, setItems] = useState<GenerationRecord[]>([])
+  const [form, setForm] = useState<GenerationForm>(emptyGenerationForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function loadGenerations() {
+    if (!supabase) {
+      setError('尚未配置 Supabase，无法管理真实届次数据。')
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    const { data, error: loadError } = await supabase
+      .from('generations')
+      .select('id,name,year,description,cover_image,slogan')
+      .order('year', { ascending: false })
+
+    if (loadError) setError(loadError.message)
+    else {
+      setItems(data ?? [])
+      setError('')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadGenerations()
+  }, [])
+
+  function startEdit(item: GenerationRecord) {
+    setEditingId(item.id)
+    setForm({
+      name: item.name,
+      year: item.year,
+      description: item.description,
+      cover_image: item.cover_image ?? '',
+      slogan: item.slogan,
+    })
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setForm(emptyGenerationForm)
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!supabase) return
+
+    setSaving(true)
+    setError('')
+    const payload = { ...form, cover_image: form.cover_image || null }
+    const result = editingId
+      ? await supabase.from('generations').update(payload).eq('id', editingId)
+      : await supabase.from('generations').insert(payload)
+
+    if (result.error) setError(result.error.message)
+    else {
+      resetForm()
+      await loadGenerations()
+    }
+    setSaving(false)
+  }
+
+  async function deleteGeneration(id: string) {
+    if (!supabase || !window.confirm('确定删除这个届次吗？')) return
+    const { error: deleteError } = await supabase.from('generations').delete().eq('id', id)
+    if (deleteError) setError(deleteError.message)
+    else await loadGenerations()
+  }
+
+  return (
+    <div className="admin-page">
+      <div className="section-title"><h1>届次管理</h1><span>{loading ? '加载中...' : `${items.length} 条记录`}</span></div>
+      {error && <section className="section-card status-warn">{error}</section>}
+      <section className="section-card form-card">
+        <h2>{editingId ? '编辑届次' : '新增届次'}</h2>
+        <form className="generation-form" onSubmit={handleSubmit}>
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="届次名称" required />
+          <input value={form.year} onChange={(event) => setForm({ ...form, year: Number(event.target.value) })} placeholder="年份" type="number" required />
+          <input value={form.slogan} onChange={(event) => setForm({ ...form, slogan: event.target.value })} placeholder="口号" />
+          <input value={form.cover_image ?? ''} onChange={(event) => setForm({ ...form, cover_image: event.target.value })} placeholder="封面图 URL" />
+          <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="届次简介" />
+          <div className="form-actions">
+            <button disabled={saving}>{saving ? '保存中...' : editingId ? '保存修改' : '新增届次'}</button>
+            {editingId && <button type="button" className="secondary-button" onClick={resetForm}>取消编辑</button>}
+          </div>
+        </form>
+      </section>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>届次</th><th>年份</th><th>口号</th><th>简介</th><th>操作</th></tr></thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td>{item.name}</td>
+                <td>{item.year}</td>
+                <td>{item.slogan}</td>
+                <td>{item.description}</td>
+                <td><button onClick={() => startEdit(item)}>编辑</button><button className="danger" onClick={() => deleteGeneration(item.id)}>删除</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
 
 export function AdminMembersPage() {
