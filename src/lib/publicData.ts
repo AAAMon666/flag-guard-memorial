@@ -60,10 +60,36 @@ export type PublicSettings = {
   messageEnabled: boolean
 }
 
+export type MediaStorageStatus = {
+  usedBytes: number
+  totalBytes: number
+  remainingBytes: number
+  usagePercent: number
+  objectCount: number
+}
+
 export const defaultSettings: PublicSettings = {
   imageUploadEnabled: true,
   videoUploadEnabled: true,
   messageEnabled: true,
+}
+
+export const defaultMediaStorageStatus: MediaStorageStatus = {
+  usedBytes: 0,
+  totalBytes: 0,
+  remainingBytes: 0,
+  usagePercent: 0,
+  objectCount: 0,
+}
+
+export function formatStorageSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** unitIndex
+
+  return `${value >= 100 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`
 }
 
 export async function loadPublicData() {
@@ -111,4 +137,22 @@ export async function loadSettings(): Promise<PublicSettings> {
     ...result,
     [item.key]: Boolean(item.value),
   }), defaultSettings)
+}
+
+export async function loadMediaStorageStatus(): Promise<MediaStorageStatus> {
+  if (!supabase) return defaultMediaStorageStatus
+
+  const { data, error } = await supabase.rpc('get_media_storage_status')
+  if (error) throw error
+
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return defaultMediaStorageStatus
+
+  return {
+    usedBytes: Number(row.used_bytes ?? 0),
+    totalBytes: Number(row.total_bytes ?? 0),
+    remainingBytes: Number(row.remaining_bytes ?? 0),
+    usagePercent: Number(row.usage_percent ?? 0),
+    objectCount: Number(row.object_count ?? 0),
+  }
 }

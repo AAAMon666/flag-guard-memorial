@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { hasSupabaseConfig, supabase } from '../../lib/supabase'
-import { defaultSettings, loadSettings } from '../../lib/publicData'
-import type { PublicSettings } from '../../lib/publicData'
+import { defaultMediaStorageStatus, defaultSettings, formatStorageSize, loadMediaStorageStatus, loadSettings } from '../../lib/publicData'
+import type { MediaStorageStatus, PublicSettings } from '../../lib/publicData'
 
 type GenerationOption = { id: string; name: string }
 
@@ -36,6 +36,7 @@ export function MediaPage() {
   const [generations, setGenerations] = useState<GenerationOption[]>([])
   const [mediaItems, setMediaItems] = useState<MediaRecord[]>([])
   const [settings, setSettings] = useState<PublicSettings>(defaultSettings)
+  const [storageStatus, setStorageStatus] = useState<MediaStorageStatus>(defaultMediaStorageStatus)
   const [form, setForm] = useState(emptyUploadForm)
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,6 +46,7 @@ export function MediaPage() {
   const filteredMedia = mediaItems.filter((item) => (type === 'all' || item.type === type) && (!generationId || item.generation_id === generationId))
   const uploadEnabled = form.type === 'image' ? settings.imageUploadEnabled : settings.videoUploadEnabled
   const fileLimit = form.type === 'image' ? imageLimit : videoLimit
+  const hasStorageQuota = storageStatus.totalBytes > 0
 
   async function loadMedia() {
     if (!supabase) {
@@ -54,10 +56,11 @@ export function MediaPage() {
     }
 
     setLoading(true)
-    const [generationResult, mediaResult, nextSettings] = await Promise.all([
+    const [generationResult, mediaResult, nextSettings, nextStorageStatus] = await Promise.all([
       supabase.from('generations').select('id,name').order('year', { ascending: false }),
       supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,activity_name,taken_date,year,tags,is_public').eq('is_public', true).order('created_at', { ascending: false }),
       loadSettings(),
+      loadMediaStorageStatus(),
     ])
 
     if (generationResult.error || mediaResult.error) setError(generationResult.error?.message ?? mediaResult.error?.message ?? '媒体数据加载失败。')
@@ -65,6 +68,7 @@ export function MediaPage() {
       setGenerations(generationResult.data ?? [])
       setMediaItems(mediaResult.data ?? [])
       setSettings(nextSettings)
+      setStorageStatus(nextStorageStatus)
       setError('')
       if (!nextSettings.videoUploadEnabled && form.type === 'video') setForm({ ...form, type: 'image' })
     }
@@ -86,6 +90,10 @@ export function MediaPage() {
     if (!supabase || !file || !uploadEnabled) return
     if (file.size > fileLimit) {
       setError(`${form.type === 'image' ? '图片' : '视频'}文件过大，当前最多支持${form.type === 'image' ? '10MB' : '100MB'}。`)
+      return
+    }
+    if (hasStorageQuota && file.size > storageStatus.remainingBytes) {
+      setError(`媒体库剩余空间不足，当前还可用 ${formatStorageSize(storageStatus.remainingBytes)}。`)
       return
     }
 
@@ -133,6 +141,11 @@ export function MediaPage() {
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="section-card form-card">
         <div className="section-title"><h2>上传照片 / 视频</h2><span>{uploadEnabled ? '已开放' : '已关闭'}</span></div>
+        <div className="tag-list storage-tags">
+          <em>已用 {formatStorageSize(storageStatus.usedBytes)}</em>
+          <em>总量 {hasStorageQuota ? formatStorageSize(storageStatus.totalBytes) : '未设置'}</em>
+          <em>剩余 {hasStorageQuota ? formatStorageSize(storageStatus.remainingBytes) : '未设置'}</em>
+        </div>
         <form className="upload-form" onSubmit={handleUpload}>
           <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="标题" disabled={!hasSupabaseConfig || !uploadEnabled} required />
           <select value={form.type} onChange={(event) => { setForm({ ...form, type: event.target.value as 'image' | 'video' }); setFile(null); setError('') }} disabled={!hasSupabaseConfig}>
@@ -146,7 +159,7 @@ export function MediaPage() {
           <input value={form.uploaderName} onChange={(event) => setForm({ ...form, uploaderName: event.target.value })} placeholder="上传者姓名" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input value={form.takenDate} onChange={(event) => setForm({ ...form, takenDate: event.target.value })} type="date" placeholder="日期" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input type="file" accept={form.type === 'image' ? 'image/*' : 'video/*'} onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)} disabled={!hasSupabaseConfig || !uploadEnabled} required />
-          <small>当前{form.type === 'image' ? '图片' : '视频'}最多支持 {form.type === 'image' ? '10MB' : '100MB'}。</small>
+          <small>当前{form.type === 'image' ? '图片' : '视频'}最多支持 {form.type === 'image' ? '10MB' : '100MB'}，媒体库剩余 {hasStorageQuota ? formatStorageSize(storageStatus.remainingBytes) : '未设置'}。</small>
           <div className="form-actions"><button disabled={!hasSupabaseConfig || !uploadEnabled || uploading}>{uploading ? '上传中...' : '上传并发布'}</button></div>
         </form>
       </section>

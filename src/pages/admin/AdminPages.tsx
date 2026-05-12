@@ -3,8 +3,8 @@ import { exportMembers } from '../../lib/excel'
 import { can, defaultRole } from '../../lib/auth'
 import { supabase } from '../../lib/supabase'
 import { members, roles } from '../../data/demo'
-import { defaultSettings, loadSettings } from '../../lib/publicData'
-import type { PublicSettings } from '../../lib/publicData'
+import { defaultMediaStorageStatus, defaultSettings, formatStorageSize, loadMediaStorageStatus, loadSettings } from '../../lib/publicData'
+import type { MediaStorageStatus, PublicSettings } from '../../lib/publicData'
 
 type GenerationRecord = { id: string; name: string; year: number; description: string; cover_image: string | null; slogan: string }
 type GenerationForm = Omit<GenerationRecord, 'id'>
@@ -33,9 +33,11 @@ type MemberForm = {
 
 const emptyGenerationForm: GenerationForm = { name: '', year: new Date().getFullYear(), description: '', cover_image: '', slogan: '' }
 const emptyMemberForm: MemberForm = { name: '', college_id: '', major_id: '', class_id: '', phone: '', gender: '', bio: '', generation_id: '', identity_tag_id: '', generation_remark: '', retired_status: false }
+const bytesPerGb = 1024 * 1024 * 1024
 
 export function AdminDashboardPage() {
   const [stats, setStats] = useState<Array<[string, number]>>([['届次', 0], ['成员', 0], ['媒体', 0], ['留言', 0]])
+  const [storageStatus, setStorageStatus] = useState<MediaStorageStatus>(defaultMediaStorageStatus)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -49,15 +51,21 @@ export function AdminDashboardPage() {
       supabase.from('members').select('id', { count: 'exact', head: true }),
       supabase.from('media_items').select('id', { count: 'exact', head: true }),
       supabase.from('messages').select('id', { count: 'exact', head: true }),
-    ]).then(([generationResult, memberResult, mediaResult, messageResult]) => {
+      loadMediaStorageStatus(),
+    ]).then(([generationResult, memberResult, mediaResult, messageResult, nextStorageStatus]) => {
       const firstError = generationResult.error ?? memberResult.error ?? mediaResult.error ?? messageResult.error
       if (firstError) setError(firstError.message)
-      else setStats([
-        ['届次', generationResult.count ?? 0],
-        ['成员', memberResult.count ?? 0],
-        ['媒体', mediaResult.count ?? 0],
-        ['留言', messageResult.count ?? 0],
-      ])
+      else {
+        setStats([
+          ['届次', generationResult.count ?? 0],
+          ['成员', memberResult.count ?? 0],
+          ['媒体', mediaResult.count ?? 0],
+          ['留言', messageResult.count ?? 0],
+        ])
+        setStorageStatus(nextStorageStatus)
+      }
+    }).catch((reason) => {
+      setError(reason instanceof Error ? reason.message : '统计加载失败。')
     })
   }, [])
 
@@ -66,6 +74,15 @@ export function AdminDashboardPage() {
       <h1>控制台</h1>
       {error && <section className="section-card status-warn">{error}</section>}
       <div className="metric-grid admin-metrics">{stats.map(([label, value]) => <div key={label}><strong>{value}</strong><span>{label}</span></div>)}</div>
+      <section className="section-card">
+        <div className="section-title"><h2>媒体库空间</h2><span>{storageStatus.totalBytes > 0 ? `已用 ${storageStatus.usagePercent.toFixed(1)}%` : '总量未设置'}</span></div>
+        <div className="metric-grid admin-metrics">
+          <div><strong>{formatStorageSize(storageStatus.usedBytes)}</strong><span>已用空间</span></div>
+          <div><strong>{storageStatus.totalBytes > 0 ? formatStorageSize(storageStatus.totalBytes) : '未设置'}</strong><span>总量</span></div>
+          <div><strong>{storageStatus.totalBytes > 0 ? formatStorageSize(storageStatus.remainingBytes) : '未设置'}</strong><span>剩余空间</span></div>
+          <div><strong>{storageStatus.objectCount}</strong><span>文件数量</span></div>
+        </div>
+      </section>
       <section className="section-card"><h2>当前能力</h2><ul className="check-list"><li>前台页面读取 Supabase 真实数据</li><li>后台删除后前台刷新即可同步</li><li>系统设置可控制留言、图片和视频上传</li><li>成员、身份标签、学院专业班级支持基础增删</li></ul></section>
     </div>
   )
@@ -351,23 +368,38 @@ export function AdminImportExportPage() {
 
 export function AdminSettingsPage() {
   const [settings, setSettings] = useState<PublicSettings>(defaultSettings)
+  const [mediaStorageQuotaGb, setMediaStorageQuotaGb] = useState('10')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { loadSettings().then(setSettings).catch((err) => setError(err instanceof Error ? err.message : '设置加载失败。')) }, [])
+  useEffect(() => {
+    loadSettings().then(setSettings).catch((err) => setError(err instanceof Error ? err.message : '设置加载失败。'))
+    if (!supabase) return
+    supabase.from('system_settings').select('value').eq('key', 'mediaStorageQuotaBytes').maybeSingle().then(({ data, error: loadError }) => {
+      if (loadError) {
+        setError(loadError.message)
+        return
+      }
+      const bytes = Number(data?.value ?? 10 * bytesPerGb)
+      setMediaStorageQuotaGb((bytes / bytesPerGb).toString())
+    })
+  }, [])
 
   async function saveSettings(event: React.FormEvent) {
     event.preventDefault()
     if (!supabase) return
     setSaving(true)
-    const rows = Object.entries(settings).map(([key, value]) => ({ key, value, updated_at: new Date().toISOString() }))
+    const rows = [
+      ...Object.entries(settings).map(([key, value]) => ({ key, value, updated_at: new Date().toISOString() })),
+      { key: 'mediaStorageQuotaBytes', value: Math.max(Number(mediaStorageQuotaGb) || 0, 0) * bytesPerGb, updated_at: new Date().toISOString() },
+    ]
     const { error: saveError } = await supabase.from('system_settings').upsert(rows)
     if (saveError) setError(saveError.message)
     else setError('')
     setSaving(false)
   }
 
-  return <div className="admin-page"><h1>系统设置</h1>{error && <section className="section-card status-warn">{error}</section>}<form className="section-card settings-grid" onSubmit={saveSettings}><label><input type="checkbox" checked={settings.imageUploadEnabled} onChange={(event) => setSettings({ ...settings, imageUploadEnabled: event.target.checked })} /> 图片上传开放</label><label><input type="checkbox" checked={settings.videoUploadEnabled} onChange={(event) => setSettings({ ...settings, videoUploadEnabled: event.target.checked })} /> 视频上传开放</label><label><input type="checkbox" checked={settings.messageEnabled} onChange={(event) => setSettings({ ...settings, messageEnabled: event.target.checked })} /> 留言开放</label><div className="form-actions"><button disabled={saving}>{saving ? '保存中...' : '保存设置'}</button></div></form></div>
+  return <div className="admin-page"><h1>系统设置</h1>{error && <section className="section-card status-warn">{error}</section>}<form className="section-card settings-grid" onSubmit={saveSettings}><label><input type="checkbox" checked={settings.imageUploadEnabled} onChange={(event) => setSettings({ ...settings, imageUploadEnabled: event.target.checked })} /> 图片上传开放</label><label><input type="checkbox" checked={settings.videoUploadEnabled} onChange={(event) => setSettings({ ...settings, videoUploadEnabled: event.target.checked })} /> 视频上传开放</label><label><input type="checkbox" checked={settings.messageEnabled} onChange={(event) => setSettings({ ...settings, messageEnabled: event.target.checked })} /> 留言开放</label><div><span>媒体库总量（GB）</span><input className="storage-input" type="number" min="0" step="0.1" value={mediaStorageQuotaGb} onChange={(event) => setMediaStorageQuotaGb(event.target.value)} /></div><p className="storage-help">前台和后台显示的剩余空间，会按这里设置的总量减去 media bucket 实际已用空间计算。</p><div className="form-actions"><button disabled={saving}>{saving ? '保存中...' : '保存设置'}</button></div></form></div>
 }
 
 function ReadOnlyAdminTable({ title, note, headers, rows }: { title: string; note: string; headers: string[]; rows: Array<Array<string | number | undefined>> }) {
