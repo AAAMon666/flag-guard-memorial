@@ -61,7 +61,7 @@ function getLongEdge(resolution: GenerateRequest['resolution']) {
 }
 
 function normalizeEvenSize(value: number) {
-  return Math.max(64, Math.round(value / 2) * 2)
+  return Math.max(64, Math.round(value / 16) * 16)
 }
 
 function getPromptOrientation(prompt: string) {
