@@ -26,10 +26,21 @@ const resolutionMap = {
   '4K': '3840x2160',
 } as const
 
+const nativeSizePromptPatterns = [
+  /\b\d{3,5}\s*[x脳]\s*\d{3,5}\b/i,
+  /\b\d+\s*:\s*\d+\b/,
+  /\b(a0|a1|a2|a3|a4|a5|a6|b4|b5)\b/i,
+  /(娴锋姤|poster|妯増|绔栫増|妯瀯鍥緗绔栨瀯鍥緗鏂瑰浘|闀垮浘|灏哄|姣斾緥)/i,
+]
+
+function shouldUsePromptNativeSize(prompt: string) {
+  return nativeSizePromptPatterns.some((pattern) => pattern.test(prompt))
+}
+
 function dataUrlToFile(dataUrl: string, fallbackName: string) {
   const [meta, payload] = dataUrl.split(',', 2)
   if (!meta || !payload || !meta.startsWith('data:')) {
-    throw new Error('参考图格式不正确。')
+    throw new Error('鍙傝€冨浘鏍煎紡涓嶆纭€?)
   }
 
   const mimeType = meta.match(/^data:([^;]+)/)?.[1] ?? 'image/png'
@@ -82,7 +93,7 @@ async function loadActiveProvider() {
 
   const provider = data as ProviderRecord | null
   if (!provider || !provider.api_key_ciphertext || !provider.api_key_iv) {
-    throw new Error('生图服务暂未开启。')
+    throw new Error('鐢熷浘鏈嶅姟鏆傛湭寮€鍚€?)
   }
 
   return provider
@@ -103,51 +114,60 @@ Deno.serve(async (req) => {
     const count = Math.min(Math.max(Number(body.count ?? 1), 1), 4)
 
     if (!prompt) {
-      return jsonResponse({ error: '请输入提示词。' }, { status: 400 })
+      return jsonResponse({ error: '璇疯緭鍏ユ彁绀鸿瘝銆? }, { status: 400 })
     }
     if (mode !== 'text-to-image' && mode !== 'image-to-image') {
-      return jsonResponse({ error: '不支持的生图模式。' }, { status: 400 })
+      return jsonResponse({ error: '涓嶆敮鎸佺殑鐢熷浘妯″紡銆? }, { status: 400 })
     }
     if (mode === 'image-to-image' && images.length === 0) {
-      return jsonResponse({ error: '图生图至少需要上传一张参考图。' }, { status: 400 })
+      return jsonResponse({ error: '鍥剧敓鍥捐嚦灏戦渶瑕佷笂浼犱竴寮犲弬鑰冨浘銆? }, { status: 400 })
     }
 
     const provider = await loadActiveProvider()
     const encryptionSecret = Deno.env.get('IMAGE_PROVIDER_KEY_SECRET')
     if (!encryptionSecret) {
-      throw new Error('生图服务未完成密钥配置。')
+      throw new Error('鐢熷浘鏈嶅姟鏈畬鎴愬瘑閽ラ厤缃€?)
     }
 
     const apiKey = await decryptProviderKey(provider.api_key_ciphertext, provider.api_key_iv, encryptionSecret)
     const apiBase = provider.api_v1_url.replace(/\/+$/, '')
     const size = resolutionMap[resolution]
+    const usePromptNativeSize = shouldUsePromptNativeSize(prompt)
 
     let upstreamResponse: Response
 
     if (mode === 'text-to-image') {
+      const requestBody: Record<string, unknown> = {
+        model: provider.model,
+        prompt,
+        n: count,
+        quality,
+        response_format: 'b64_json',
+      }
+
+      if (!usePromptNativeSize) {
+        requestBody.size = size
+      }
+
       upstreamResponse = await fetch(`${apiBase}/images/generations`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: provider.model,
-          prompt,
-          n: count,
-          size,
-          quality,
-          response_format: 'b64_json',
-        }),
+        body: JSON.stringify(requestBody),
       })
     } else {
       const formData = new FormData()
       formData.set('model', provider.model)
       formData.set('prompt', prompt)
       formData.set('n', String(count))
-      formData.set('size', size)
       formData.set('quality', quality)
       formData.set('response_format', 'b64_json')
+
+      if (!usePromptNativeSize) {
+        formData.set('size', size)
+      }
 
       images.forEach((image, index) => {
         const file = dataUrlToFile(image, `reference-${index + 1}`)
@@ -170,7 +190,7 @@ Deno.serve(async (req) => {
         ? payload.error.message
         : typeof payload?.message === 'string'
           ? payload.message
-          : '生图请求失败。'
+          : '鐢熷浘璇锋眰澶辫触銆?
       return jsonResponse({ error: message }, { status: upstreamResponse.status })
     }
 
@@ -181,7 +201,7 @@ Deno.serve(async (req) => {
     })
   } catch (error) {
     return jsonResponse(
-      { error: error instanceof Error ? error.message : '生图服务异常。' },
+      { error: error instanceof Error ? error.message : '鐢熷浘鏈嶅姟寮傚父銆? },
       { status: 500 },
     )
   }
