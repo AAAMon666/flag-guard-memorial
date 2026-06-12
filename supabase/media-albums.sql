@@ -87,8 +87,10 @@ as $$
     select 1
     from public.media_items media
     where media.id = media_id
-      and media.edit_password_hash is not null
-      and media.edit_password_hash = public.hash_media_password(plain_password)
+      and (
+        media.edit_password_hash is null
+        or media.edit_password_hash = public.hash_media_password(plain_password)
+      )
   );
 $$;
 

@@ -94,7 +94,7 @@ export function MediaPage() {
 
   async function handleUpload(event: React.FormEvent) {
     event.preventDefault()
-    if (!supabase || !files.length || !uploadEnabled || !form.editPassword) return
+    if (!supabase || !files.length || !uploadEnabled) return
 
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
     const oversized = files.find((file) => file.size > fileLimit)
@@ -138,12 +138,14 @@ export function MediaPage() {
       const { error: assetError } = await supabase.from('media_item_assets').insert(assetRows)
       if (assetError) throw assetError
 
-      const { data: passwordOk, error: passwordError } = await supabase.rpc('set_media_edit_password', {
-        media_id: insertedMedia.id,
-        plain_password: form.editPassword,
-      })
-      if (passwordError) throw passwordError
-      if (!passwordOk) throw new Error('编辑密码设置失败。')
+      if (form.editPassword) {
+        const { data: passwordOk, error: passwordError } = await supabase.rpc('set_media_edit_password', {
+          media_id: insertedMedia.id,
+          plain_password: form.editPassword,
+        })
+        if (passwordError) throw passwordError
+        if (!passwordOk) throw new Error('编辑密码设置失败。')
+      }
 
       setForm(emptyUploadForm)
       setFiles([])
@@ -182,9 +184,9 @@ export function MediaPage() {
           </select>
           <input value={form.uploaderName} onChange={(event) => setForm((current) => ({ ...current, uploaderName: event.target.value }))} placeholder="上传者姓名" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input value={form.takenDate} onChange={(event) => setForm((current) => ({ ...current, takenDate: event.target.value }))} type="date" placeholder="日期" disabled={!hasSupabaseConfig || !uploadEnabled} />
-          <input value={form.editPassword} onChange={(event) => setForm((current) => ({ ...current, editPassword: event.target.value }))} type="password" placeholder="设置编辑密码" disabled={!hasSupabaseConfig || !uploadEnabled} required />
+          <input value={form.editPassword} onChange={(event) => setForm((current) => ({ ...current, editPassword: event.target.value }))} type="password" placeholder="设置编辑密码（可留空）" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input type="file" multiple={form.type === 'image'} accept={form.type === 'image' ? 'image/*' : 'video/*'} onChange={(event) => handleFileChange(event.target.files)} disabled={!hasSupabaseConfig || !uploadEnabled} required />
-          <small>{form.type === 'image' ? '可一次选择多张图片；以后修改标题、日期或补传图片时，需要输入这里设置的编辑密码。' : '视频仍保持单条上传；后续修改文案也需要编辑密码。'}</small>
+          <small>{form.type === 'image' ? '可一次选择多张图片；设置编辑密码后，后续修改需要输入该密码；不设置则允许所有人修改。' : '视频仍保持单条上传；设置编辑密码后，后续修改需要输入该密码；不设置则允许所有人修改。'}</small>
           <div className="form-actions"><button disabled={!hasSupabaseConfig || !uploadEnabled || uploading}>{uploading ? '上传中...' : '上传并发布'}</button></div>
         </form>
       </section>

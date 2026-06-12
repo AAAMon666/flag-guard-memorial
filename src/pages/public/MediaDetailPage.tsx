@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useAuth } from '../../lib/AuthContext'
 import { hasSupabaseConfig, supabase } from '../../lib/supabase'
 import { loadPublicData } from '../../lib/publicData'
 import type { PublicGeneration, PublicMedia } from '../../lib/publicData'
@@ -27,7 +26,6 @@ const emptyEditForm: EditForm = {
 
 export function MediaDetailPage() {
   const { id } = useParams()
-  const { session } = useAuth()
   const [media, setMedia] = useState<PublicMedia | null>(null)
   const [generations, setGenerations] = useState<PublicGeneration[]>([])
   const [editing, setEditing] = useState(false)
@@ -35,8 +33,6 @@ export function MediaDetailPage() {
   const [pendingAssetFiles, setPendingAssetFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-
-  const canAdminEdit = Boolean(session)
 
   async function loadMedia() {
     if (!supabase || !hasSupabaseConfig) {
@@ -87,8 +83,8 @@ export function MediaDetailPage() {
 
   async function saveEdit(item: PublicMedia) {
     if (!supabase) return
-    if (!editForm.title || (!canAdminEdit && !editForm.password)) {
-      setError(canAdminEdit ? '请填写标题。' : '请填写标题和编辑密码。')
+    if (!editForm.title) {
+      setError('请填写标题。')
       return
     }
 
@@ -96,74 +92,40 @@ export function MediaDetailPage() {
     setError('')
 
     try {
-      if (canAdminEdit) {
-        const { error: updateError } = await supabase.from('media_items').update({
-          title: editForm.title,
-          generation_id: editForm.generationId || null,
-          activity_name: editForm.uploaderName || null,
-          taken_date: editForm.takenDate || null,
-          year: editForm.takenDate ? Number(editForm.takenDate.slice(0, 4)) : null,
-          tags: editForm.takenDate ? [editForm.takenDate] : [],
-          is_public: editForm.isPublic,
-          updated_at: new Date().toISOString(),
-        }).eq('id', item.id)
-        if (updateError) throw updateError
+      const { data: updateOk, error: updateError } = await supabase.rpc('update_media_with_password', {
+        media_id: item.id,
+        plain_password: editForm.password,
+        next_title: editForm.title,
+        next_generation_id: editForm.generationId || null,
+        next_activity_name: editForm.uploaderName || null,
+        next_taken_date: editForm.takenDate || null,
+        next_is_public: editForm.isPublic,
+      })
+      if (updateError) throw updateError
+      if (!updateOk) throw new Error('编辑密码不正确。')
 
-        if (editForm.nextPassword) {
-          const { error: passwordError } = await supabase.rpc('admin_update_media_edit_password', {
-            media_id: item.id,
-            new_password: editForm.nextPassword,
-          })
-          if (passwordError) throw passwordError
-        }
-      } else {
-        const { data: updateOk, error: updateError } = await supabase.rpc('update_media_with_password', {
+      if (editForm.nextPassword) {
+        const { data: passwordOk, error: passwordError } = await supabase.rpc('change_media_edit_password_with_password', {
           media_id: item.id,
-          plain_password: editForm.password,
-          next_title: editForm.title,
-          next_generation_id: editForm.generationId || null,
-          next_activity_name: editForm.uploaderName || null,
-          next_taken_date: editForm.takenDate || null,
-          next_is_public: editForm.isPublic,
+          old_password: editForm.password,
+          new_password: editForm.nextPassword,
         })
-        if (updateError) throw updateError
-        if (!updateOk) throw new Error('编辑密码不正确。')
-
-        if (editForm.nextPassword) {
-          const { data: passwordOk, error: passwordError } = await supabase.rpc('change_media_edit_password_with_password', {
-            media_id: item.id,
-            old_password: editForm.password,
-            new_password: editForm.nextPassword,
-          })
-          if (passwordError) throw passwordError
-          if (!passwordOk) throw new Error('编辑密码不正确。')
-        }
+        if (passwordError) throw passwordError
+        if (!passwordOk) throw new Error('编辑密码不正确。')
       }
 
       if (item.type === 'image' && pendingAssetFiles.length) {
         const uploadedFiles = await Promise.all(pendingAssetFiles.map((file) => uploadAsset(file)))
-        if (canAdminEdit) {
-          const assetRows = uploadedFiles.map((url, index) => ({
-            media_item_id: item.id,
-            file_url: url,
-            cover_url: null,
-            asset_type: 'image',
-            sort_order: item.asset_count + index,
-          }))
-          const { error: assetError } = await supabase.from('media_item_assets').insert(assetRows)
+        for (const url of uploadedFiles) {
+          const { data: assetOk, error: assetError } = await supabase.rpc('add_media_asset_with_password', {
+            media_id: item.id,
+            plain_password: editForm.password,
+            next_file_url: url,
+            next_cover_url: null,
+            next_asset_type: 'image',
+          })
           if (assetError) throw assetError
-        } else {
-          for (const url of uploadedFiles) {
-            const { data: assetOk, error: assetError } = await supabase.rpc('add_media_asset_with_password', {
-              media_id: item.id,
-              plain_password: editForm.password,
-              next_file_url: url,
-              next_cover_url: null,
-              next_asset_type: 'image',
-            })
-            if (assetError) throw assetError
-            if (!assetOk) throw new Error('编辑密码不正确。')
-          }
+          if (!assetOk) throw new Error('编辑密码不正确。')
         }
       }
 
@@ -183,13 +145,6 @@ export function MediaDetailPage() {
       return
     }
 
-    if (canAdminEdit) {
-      const { error: deleteError } = await supabase.from('media_item_assets').delete().eq('id', assetId)
-      if (deleteError) setError(deleteError.message)
-      else await loadMedia()
-      return
-    }
-
     const { data: deleteOk, error: deleteError } = await supabase.rpc('delete_media_asset_with_password', {
       media_id: item.id,
       asset_id: assetId,
@@ -202,36 +157,13 @@ export function MediaDetailPage() {
 
   async function setPrimaryAsset(item: PublicMedia, assetId: string) {
     if (!supabase) return
-    const client = supabase
-    const asset = item.assets.find((current) => current.id === assetId)
-    if (!asset) return
-
-    if (!canAdminEdit) {
-      const { data: updateOk, error: updateError } = await supabase.rpc('set_media_primary_asset_with_password', {
-        media_id: item.id,
-        asset_id: assetId,
-        plain_password: editForm.password,
-      })
-      if (updateError) setError(updateError.message)
-      else if (!updateOk) setError('编辑密码不正确。')
-      else await loadMedia()
-      return
-    }
-
-    const sortedIds = [assetId, ...item.assets.filter((current) => current.id !== assetId).map((current) => current.id)]
-    const updateResults = await Promise.all(sortedIds.map((currentId, index) => client.from('media_item_assets').update({ sort_order: index }).eq('id', currentId)))
-    const failed = updateResults.find((result) => result.error)
-    if (failed?.error) {
-      setError(failed.error.message)
-      return
-    }
-
-    const { error: coverError } = await supabase.from('media_items').update({
-      file_url: asset.file_url,
-      cover_url: asset.cover_url ?? asset.file_url,
-      updated_at: new Date().toISOString(),
-    }).eq('id', item.id)
-    if (coverError) setError(coverError.message)
+    const { data: updateOk, error: updateError } = await supabase.rpc('set_media_primary_asset_with_password', {
+      media_id: item.id,
+      asset_id: assetId,
+      plain_password: editForm.password,
+    })
+    if (updateError) setError(updateError.message)
+    else if (!updateOk) setError('编辑密码不正确。')
     else await loadMedia()
   }
 
@@ -299,8 +231,8 @@ export function MediaDetailPage() {
           <input value={editForm.uploaderName} onChange={(event) => setEditForm((current) => ({ ...current, uploaderName: event.target.value }))} placeholder="上传者姓名" />
           <input value={editForm.takenDate} onChange={(event) => setEditForm((current) => ({ ...current, takenDate: event.target.value }))} type="date" />
           <label><input type="checkbox" checked={editForm.isPublic} onChange={(event) => setEditForm((current) => ({ ...current, isPublic: event.target.checked }))} /> 公开显示</label>
-          {!canAdminEdit && <input value={editForm.password} onChange={(event) => setEditForm((current) => ({ ...current, password: event.target.value }))} type="password" placeholder="当前编辑密码" />}
-          <input value={editForm.nextPassword} onChange={(event) => setEditForm((current) => ({ ...current, nextPassword: event.target.value }))} type="password" placeholder={canAdminEdit ? '管理员重置新密码（可选）' : '修改为新密码（可选）'} />
+          <input value={editForm.password} onChange={(event) => setEditForm((current) => ({ ...current, password: event.target.value }))} type="password" placeholder="当前编辑密码（未设置可留空）" />
+          <input value={editForm.nextPassword} onChange={(event) => setEditForm((current) => ({ ...current, nextPassword: event.target.value }))} type="password" placeholder="修改为新编辑密码（可选）" />
           {media.type === 'image' && <input type="file" multiple accept="image/*" onChange={(event) => setPendingAssetFiles(Array.from(event.target.files ?? []))} />}
           {pendingAssetFiles.length > 0 && <small>待追加 {pendingAssetFiles.length} 张图片。</small>}
           <div className="form-actions"><button type="button" disabled={saving} onClick={() => saveEdit(media)}>{saving ? '保存中...' : '保存修改'}</button></div>
