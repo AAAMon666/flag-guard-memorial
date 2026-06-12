@@ -232,7 +232,7 @@ Deno.serve(async (req) => {
         prompt: providerPrompt,
         n: count,
         quality,
-        response_format: 'b64_json',
+        response_format: 'url',
       }
 
       if (!usePromptNativeSize || promptSize) {
@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
       formData.set('prompt', providerPrompt)
       formData.set('n', String(count))
       formData.set('quality', quality)
-      formData.set('response_format', 'b64_json')
+      formData.set('response_format', 'url')
 
       if (!usePromptNativeSize || promptSize) {
         formData.set('size', requestSize)
