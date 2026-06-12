@@ -62,9 +62,9 @@ function readFileAsDataUrl(file: File) {
     const reader = new FileReader()
     reader.onload = () => {
       if (typeof reader.result === 'string') resolve(reader.result)
-      else reject(new Error('鍙傝€冨浘璇诲彇澶辫触銆?))
+      else reject(new Error('参考图读取失败。'))
     }
-    reader.onerror = () => reject(new Error('鍙傝€冨浘璇诲彇澶辫触銆?))
+    reader.onerror = () => reject(new Error('参考图读取失败。'))
     reader.readAsDataURL(file)
   })
 }
@@ -80,7 +80,7 @@ function loadImageElement(file: File) {
     }
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl)
-      reject(new Error('鍙傝€冨浘璇诲彇澶辫触銆?))
+      reject(new Error('参考图读取失败。'))
     }
 
     image.src = objectUrl
@@ -103,7 +103,7 @@ async function normalizeReferenceImage(file: File) {
 
   const context = canvas.getContext('2d')
   if (!context) {
-    throw new Error('鍙傝€冨浘澶勭悊澶辫触锛岃閲嶈瘯銆?)
+    throw new Error('参考图处理失败，请重试。')
   }
 
   context.drawImage(image, 0, 0, width, height)
@@ -111,7 +111,7 @@ async function normalizeReferenceImage(file: File) {
   const createBlob = (quality: number) => new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob)
-      else reject(new Error('鍙傝€冨浘澶勭悊澶辫触锛岃閲嶈瘯銆?))
+      else reject(new Error('参考图处理失败，请重试。'))
     }, 'image/jpeg', quality)
   })
 
@@ -126,7 +126,7 @@ async function normalizeReferenceImage(file: File) {
 
 function buildWorkTitle(prompt: string, index: number) {
   const trimmed = prompt.trim()
-  return trimmed ? `${trimmed.slice(0, 24)}${trimmed.length > 24 ? '...' : ''} #${index + 1}` : `浣滃搧 ${index + 1}`
+  return trimmed ? `${trimmed.slice(0, 24)}${trimmed.length > 24 ? '...' : ''} #${index + 1}` : `作品 ${index + 1}`
 }
 
 function buildDownloadFileName(name: string, index = 0) {
@@ -177,7 +177,7 @@ async function downloadImageFile(fileUrl: string, fileName: string) {
 
   const response = await fetch(fileUrl)
   if (!response.ok) {
-    throw new Error('涓嬭浇浣滃搧澶辫触锛岃绋嶅悗閲嶈瘯銆?)
+    throw new Error('下载作品失败，请稍后重试。')
   }
 
   const blob = await response.blob()
@@ -192,11 +192,11 @@ async function downloadImageFile(fileUrl: string, fileName: string) {
 }
 
 function buildResultMeta(result: GeneratedResult) {
-  return `${result.providerName || '褰撳墠渚涘簲鍟?} / ${result.modelName || '榛樿妯″瀷'} / ${result.resolution} / ${result.quality}`
+  return `${result.providerName || '当前供应商'} / ${result.modelName || '默认模型'} / ${result.resolution} / ${result.quality}`
 }
 
 function buildGalleryMeta(item: PublicGeneratedGalleryItem) {
-  return `${item.provider_name || '鍏紑浣滃搧'} / ${item.model || '榛樿妯″瀷'} / ${new Date(item.created_at).toLocaleString()}`
+  return `${item.provider_name || '公开作品'} / ${item.model || '默认模型'} / ${new Date(item.created_at).toLocaleString()}`
 }
 
 export function GeneratePage() {
@@ -238,7 +238,7 @@ export function GeneratePage() {
 
   useEffect(() => {
     refreshGallery().catch((err) => {
-      setError(err instanceof Error ? err.message : '浣滃搧闆嗗姞杞藉け璐ャ€?)
+      setError(err instanceof Error ? err.message : '作品集加载失败。')
       setLoadingGallery(false)
     })
   }, [])
@@ -251,7 +251,7 @@ export function GeneratePage() {
     setReferenceFiles((current) => appendUniqueFiles(current, validFiles))
 
     if (invalidFiles.length > 0) {
-      setError('鍥剧敓鍥惧綋鍓嶆敮鎸?JPG銆丳NG銆乄ebP 鏍煎紡銆?)
+      setError('图生图当前支持 JPG、PNG、WebP 格式。')
     } else {
       setError('')
     }
@@ -276,7 +276,7 @@ export function GeneratePage() {
 
   function openGalleryPreview(item: PublicGeneratedGalleryItem, index: number) {
     setPreviewItem({
-      title: item.title || `浣滃搧 ${index + 1}`,
+      title: item.title || `作品 ${index + 1}`,
       imageUrl: item.image_url,
       prompt: item.prompt,
       meta: buildGalleryMeta(item),
@@ -291,7 +291,7 @@ export function GeneratePage() {
     try {
       await downloadImageFile(fileUrl, fileName)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '涓嬭浇浣滃搧澶辫触锛岃绋嶅悗閲嶈瘯銆?)
+      setError(err instanceof Error ? err.message : '下载作品失败，请稍后重试。')
     } finally {
       setDownloadingName('')
     }
@@ -300,15 +300,15 @@ export function GeneratePage() {
   async function handleGenerate(event: React.FormEvent) {
     event.preventDefault()
     if (!supabase || !hasSupabaseConfig) {
-      setError('灏氭湭閰嶇疆 Supabase锛屾殏鏃舵棤娉曚娇鐢ㄧ敓鍥炬湇鍔°€?)
+      setError('尚未配置 Supabase，暂时无法使用生图服务。')
       return
     }
     if (!form.prompt.trim()) {
-      setError('璇疯緭鍏ユ彁绀鸿瘝銆?)
+      setError('请输入提示词。')
       return
     }
     if (mode === 'image-to-image' && referenceFiles.length === 0) {
-      setError('鍥剧敓鍥捐嚦灏戦渶瑕佷笂浼犱竴寮犲弬鑰冨浘銆?)
+      setError('图生图至少需要上传一张参考图。')
       return
     }
 
@@ -354,7 +354,7 @@ export function GeneratePage() {
           : [],
       )
     } catch (err) {
-      setError(await extractFunctionErrorMessage(err, '鐢熷浘澶辫触銆?))
+      setError(await extractFunctionErrorMessage(err, '生图失败。'))
       setResults([])
     } finally {
       setGenerating(false)
@@ -387,7 +387,7 @@ export function GeneratePage() {
 
       await refreshGallery()
     } catch (err) {
-      setError(await extractFunctionErrorMessage(err, '淇濆瓨浣滃搧澶辫触銆?))
+      setError(await extractFunctionErrorMessage(err, '保存作品失败。'))
     } finally {
       setSavingIds((current) => current.filter((id) => id !== result.id))
     }
@@ -396,36 +396,36 @@ export function GeneratePage() {
   return (
     <div className="page-stack narrow">
       <div className="page-heading">
-        <span className="eyebrow">Image2 鐢熷浘</span>
-        <h1>鏂囩敓鍥句笌鍥剧敓鍥?/h1>
-        <p>鐢熸垚缁撴灉鍙繚鐣欏湪褰撳墠椤甸潰銆傚枩娆㈢殑鍥惧啀鎵嬪姩淇濆瓨杩涗綔鍝佹璧忛泦锛屾墠浼氳繘鍏ュ叕鍏卞睍绀恒€?/p>
+        <span className="eyebrow">Image2 生图</span>
+        <h1>文生图与图生图</h1>
+        <p>生成结果只保留在当前页面。喜欢的图再手动保存进作品欣赏集，才会进入公共展示。</p>
       </div>
 
       {error && <section className="section-card status-warn">{error}</section>}
 
       <section className="section-card form-card">
         <div className="section-title">
-          <h2>寮€濮嬬敓鍥?/h2>
-          <span>{mode === 'text-to-image' ? '鏂囩敓鍥? : '鍥剧敓鍥?}</span>
+          <h2>开始生图</h2>
+          <span>{mode === 'text-to-image' ? '文生图' : '图生图'}</span>
         </div>
 
         <div className="segmented-control">
-          <button type="button" className={mode === 'text-to-image' ? 'active' : 'secondary-button'} onClick={() => setMode('text-to-image')}>鏂囩敓鍥?/button>
-          <button type="button" className={mode === 'image-to-image' ? 'active' : 'secondary-button'} onClick={() => setMode('image-to-image')}>鍥剧敓鍥?/button>
+          <button type="button" className={mode === 'text-to-image' ? 'active' : 'secondary-button'} onClick={() => setMode('text-to-image')}>文生图</button>
+          <button type="button" className={mode === 'image-to-image' ? 'active' : 'secondary-button'} onClick={() => setMode('image-to-image')}>图生图</button>
         </div>
 
         <form className="generate-form" onSubmit={handleGenerate}>
           <textarea
             value={form.prompt}
             onChange={(event) => setForm((current) => ({ ...current, prompt: event.target.value }))}
-            placeholder="杈撳叆浣犳兂鐢熸垚鐨勭敾闈㈠唴瀹癸紝灏介噺鍏蜂綋涓€鐐广€?
+            placeholder="输入你想生成的画面内容，尽量具体一点。"
             required
           />
-          <small>鎻愮ず璇嶉噷鍐?A3銆?6:9銆佺珫鐗堛€佹捣鎶ヨ繖绫绘槑纭昂瀵告垨姣斾緥淇℃伅鏃讹紝浼氫紭鍏堟寜鎻愮ず璇嶅鐞嗭紝涓嶅啀寮哄埗濂楃敤鍥哄畾鐢诲竷姣斾緥銆?/small>
+          <small>提示词里写 A3、16:9、竖版、海报这类明确尺寸或比例信息时，会优先按提示词处理，不再强制套用固定画布比例。</small>
 
           <div className="generate-options">
             <label>
-              <span>鍒嗚鲸鐜?/span>
+              <span>分辨率</span>
               <select value={form.resolution} onChange={(event) => setForm((current) => ({ ...current, resolution: event.target.value as ResolutionOption }))}>
                 <option value="1K">1K</option>
                 <option value="2K">2K</option>
@@ -433,17 +433,17 @@ export function GeneratePage() {
               </select>
             </label>
             <label>
-              <span>璐ㄩ噺</span>
+              <span>质量</span>
               <select value={form.quality} onChange={(event) => setForm((current) => ({ ...current, quality: event.target.value as QualityOption }))}>
-                <option value="low">浣?/option>
-                <option value="medium">涓?/option>
-                <option value="high">楂?/option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
               </select>
             </label>
             <label>
-              <span>杈撳嚭寮犳暟</span>
+              <span>输出张数</span>
               <select value={form.count} onChange={(event) => setForm((current) => ({ ...current, count: Number(event.target.value) }))}>
-                {countOptions.map((count) => <option key={count} value={count}>{count} 寮?/option>)}
+                {countOptions.map((count) => <option key={count} value={count}>{count} 张</option>)}
               </select>
             </label>
           </div>
@@ -461,29 +461,29 @@ export function GeneratePage() {
               />
               {referenceFiles.length > 0 && (
                 <div className="selected-file-list">
-                  <strong>宸查€夋嫨 {referenceFiles.length} 寮犲弬鑰冨浘</strong>
+                  <strong>已选择 {referenceFiles.length} 张参考图</strong>
                   {referenceFiles.map((file) => (
                     <span key={fileKey(file)}>
                       {file.name}
-                      <button type="button" className="secondary-button" onClick={() => removeReferenceFile(file)}>绉婚櫎</button>
+                      <button type="button" className="secondary-button" onClick={() => removeReferenceFile(file)}>移除</button>
                     </span>
                   ))}
                 </div>
               )}
-              <small>鍥剧敓鍥句細鍏堣嚜鍔ㄥ帇缂╁弬鑰冨浘锛屽啀鍙戦€佺敓鎴愯姹傦紝浼樺厛閬垮厤鎵嬫満鍘熷浘杩囧ぇ瀵艰嚧涓婁紶澶辫触銆?/small>
+              <small>图生图会先自动压缩参考图，再发送生成请求，优先避免手机原图过大导致上传失败。</small>
             </>
           )}
 
           <div className="form-actions">
-            <button disabled={generating || !hasSupabaseConfig}>{generating ? '鐢熸垚涓?..' : '寮€濮嬬敓鎴?}</button>
+            <button disabled={generating || !hasSupabaseConfig}>{generating ? '生成中...' : '开始生成'}</button>
           </div>
         </form>
       </section>
 
       <section className="section-card">
         <div className="section-title">
-          <h2>鏈鐢熸垚缁撴灉</h2>
-          <span>{results.length ? `${results.length} 寮燻 : '鏈敓鎴?}</span>
+          <h2>本次生成结果</h2>
+          <span>{results.length ? `${results.length} 张` : '未生成'}</span>
         </div>
         {results.length ? (
           <div className="media-grid generated-grid">
@@ -495,22 +495,22 @@ export function GeneratePage() {
                 <article className="media-card large generated-card" key={result.id}>
                   {imageUrl ? (
                     <button type="button" className="media-preview-button" onClick={() => openResultPreview(result, index)}>
-                      <img src={imageUrl} alt={`鐢熸垚缁撴灉 ${index + 1}`} />
+                      <img src={imageUrl} alt={`生成结果 ${index + 1}`} />
                     </button>
                   ) : (
-                    <div className="media-placeholder">鏆傛棤鍥剧墖</div>
+                    <div className="media-placeholder">暂无图片</div>
                   )}
                   <div>
                     <strong>{buildWorkTitle(result.prompt, index)}</strong>
                     <span>{buildResultMeta(result)}</span>
-                    {result.revisedPrompt && <p className="generated-note">妯″瀷鏀瑰啓鎻愮ず璇嶏細{result.revisedPrompt}</p>}
+                    {result.revisedPrompt && <p className="generated-note">模型改写提示词：{result.revisedPrompt}</p>}
                     <div className="form-actions media-card-actions">
                       <button
                         type="button"
                         disabled={savingIds.includes(result.id)}
                         onClick={() => publishResult(result, index)}
                       >
-                        {savingIds.includes(result.id) ? '淇濆瓨涓?..' : '淇濆瓨鍒颁綔鍝侀泦'}
+                        {savingIds.includes(result.id) ? '保存中...' : '保存到作品集'}
                       </button>
                       {imageUrl && (
                         <>
@@ -519,7 +519,7 @@ export function GeneratePage() {
                             className="secondary-button"
                             onClick={() => openResultPreview(result, index)}
                           >
-                            鏌ョ湅澶у浘
+                            查看大图
                           </button>
                           <button
                             type="button"
@@ -527,7 +527,7 @@ export function GeneratePage() {
                             disabled={downloadingName === fileName}
                             onClick={() => handleDownload(imageUrl, fileName)}
                           >
-                            {downloadingName === fileName ? '涓嬭浇涓?..' : '涓嬭浇鍥剧墖'}
+                            {downloadingName === fileName ? '下载中...' : '下载图片'}
                           </button>
                         </>
                       )}
@@ -538,14 +538,14 @@ export function GeneratePage() {
             })}
           </div>
         ) : (
-          <p className="empty-state">褰撳墠杩樻病鏈夌敓鎴愮粨鏋滐紝杈撳叆鎻愮ず璇嶅悗鍗冲彲寮€濮嬨€?/p>
+          <p className="empty-state">当前还没有生成结果，输入提示词后即可开始。</p>
         )}
       </section>
 
       <section className="section-card">
         <div className="section-title">
-          <h2>浣滃搧娆ｈ祻闆?/h2>
-          <span>{loadingGallery ? '鍔犺浇涓?..' : `${galleryItems.length} 浠朵綔鍝乣}</span>
+          <h2>作品欣赏集</h2>
+          <span>{loadingGallery ? '加载中...' : `${galleryItems.length} 件作品`}</span>
         </div>
         {galleryItems.length ? (
           <div className="media-grid generated-grid">
@@ -558,11 +558,11 @@ export function GeneratePage() {
                     <img src={item.image_url} alt={item.title} />
                   </button>
                   <div className="gallery-card-copy">
-                    <strong>{item.title || '鏈懡鍚嶄綔鍝?}</strong>
+                    <strong>{item.title || '未命名作品'}</strong>
                     <span>{buildGalleryMeta(item)}</span>
                     <p className="generated-note">{item.prompt}</p>
                     <div className="tag-list">
-                      <em>{item.mode === 'text-to-image' ? '鏂囩敓鍥? : '鍥剧敓鍥?}</em>
+                      <em>{item.mode === 'text-to-image' ? '文生图' : '图生图'}</em>
                       <em>{item.resolution}</em>
                       <em>{item.quality}</em>
                     </div>
@@ -572,7 +572,7 @@ export function GeneratePage() {
                         className="secondary-button"
                         onClick={() => openGalleryPreview(item, index)}
                       >
-                        鏌ョ湅澶у浘
+                        查看大图
                       </button>
                       <button
                         type="button"
@@ -580,7 +580,7 @@ export function GeneratePage() {
                         disabled={downloadingName === fileName}
                         onClick={() => handleDownload(item.image_url, fileName)}
                       >
-                        {downloadingName === fileName ? '涓嬭浇涓?..' : '涓嬭浇浣滃搧'}
+                        {downloadingName === fileName ? '下载中...' : '下载作品'}
                       </button>
                     </div>
                   </div>
@@ -589,7 +589,7 @@ export function GeneratePage() {
             })}
           </div>
         ) : (
-          <p className="empty-state">{loadingGallery ? '浣滃搧闆嗗姞杞戒腑...' : '浣滃搧娆ｈ祻闆嗚繕娌℃湁鍏紑浣滃搧銆?}</p>
+          <p className="empty-state">{loadingGallery ? '作品集加载中...' : '作品欣赏集还没有公开作品。'}</p>
         )}
       </section>
 
@@ -601,7 +601,7 @@ export function GeneratePage() {
                 <strong>{previewItem.title}</strong>
                 <span>{previewItem.meta}</span>
               </div>
-              <button type="button" className="secondary-button" onClick={() => setPreviewItem(null)}>鍏抽棴</button>
+              <button type="button" className="secondary-button" onClick={() => setPreviewItem(null)}>关闭</button>
             </div>
             <div className="preview-modal-image">
               <img src={previewItem.imageUrl} alt={previewItem.title} />
@@ -613,9 +613,9 @@ export function GeneratePage() {
                 onClick={() => handleDownload(previewItem.imageUrl, previewItem.fileName)}
                 disabled={downloadingName === previewItem.fileName}
               >
-                {downloadingName === previewItem.fileName ? '涓嬭浇涓?..' : '涓嬭浇鍥剧墖'}
+                {downloadingName === previewItem.fileName ? '下载中...' : '下载图片'}
               </button>
-              <button type="button" className="secondary-button" onClick={() => setPreviewItem(null)}>杩斿洖</button>
+              <button type="button" className="secondary-button" onClick={() => setPreviewItem(null)}>返回</button>
             </div>
           </div>
         </div>
