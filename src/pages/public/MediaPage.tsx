@@ -1,0 +1,233 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { hasSupabaseConfig, supabase } from '../../lib/supabase'
+import { defaultMediaStorageStatus, defaultSettings, formatStorageSize, loadMediaStorageStatus, loadPublicData, loadSettings } from '../../lib/publicData'
+import type { MediaStorageStatus, PublicMedia, PublicSettings } from '../../lib/publicData'
+
+type GenerationOption = { id: string; name: string }
+
+type UploadForm = {
+  title: string
+  type: 'image' | 'video'
+  generationId: string
+  uploaderName: string
+  takenDate: string
+  editPassword: string
+}
+
+const imageLimit = 10 * 1024 * 1024
+const videoLimit = 100 * 1024 * 1024
+
+const emptyUploadForm: UploadForm = {
+  title: '',
+  type: 'image',
+  generationId: '',
+  uploaderName: '',
+  takenDate: '',
+  editPassword: '',
+}
+
+export function MediaPage() {
+  const [type, setType] = useState('all')
+  const [generationId, setGenerationId] = useState('')
+  const [generations, setGenerations] = useState<GenerationOption[]>([])
+  const [mediaItems, setMediaItems] = useState<PublicMedia[]>([])
+  const [settings, setSettings] = useState<PublicSettings>(defaultSettings)
+  const [storageStatus, setStorageStatus] = useState<MediaStorageStatus>(defaultMediaStorageStatus)
+  const [form, setForm] = useState<UploadForm>(emptyUploadForm)
+  const [files, setFiles] = useState<File[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  const filteredMedia = useMemo(() => mediaItems.filter((item) => (type === 'all' || item.type === type) && (!generationId || item.generation_id === generationId)), [generationId, mediaItems, type])
+  const uploadEnabled = form.type === 'image' ? settings.imageUploadEnabled : settings.videoUploadEnabled
+  const fileLimit = form.type === 'image' ? imageLimit : videoLimit
+  const hasStorageQuota = storageStatus.totalBytes > 0
+
+  async function refreshMedia() {
+    if (!supabase) {
+      setError('尚未配置 Supabase，无法使用真实媒体上传功能。')
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    const [publicData, nextSettings, nextStorageStatus] = await Promise.all([
+      loadPublicData(),
+      loadSettings(),
+      loadMediaStorageStatus(),
+    ])
+
+    setGenerations(publicData.generations.map((item) => ({ id: item.id, name: item.name })))
+    setMediaItems(publicData.media)
+    setSettings(nextSettings)
+    setStorageStatus(nextStorageStatus)
+    setError('')
+    if (!nextSettings.videoUploadEnabled && form.type === 'video') setForm((current) => ({ ...current, type: 'image' }))
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    refreshMedia().catch((err) => {
+      setError(err instanceof Error ? err.message : '媒体数据加载失败。')
+      setLoading(false)
+    })
+  }, [])
+
+  function handleFileChange(nextFiles: FileList | null) {
+    const normalizedFiles = Array.from(nextFiles ?? [])
+    setFiles(normalizedFiles)
+    const oversized = normalizedFiles.find((file) => file.size > fileLimit)
+    if (oversized) setError(`${form.type === 'image' ? '图片' : '视频'}文件过大，当前最多支持${form.type === 'image' ? '10MB' : '100MB'}。`)
+    else setError('')
+  }
+
+  async function uploadAsset(file: File, folder: string) {
+    if (!supabase) throw new Error('尚未配置 Supabase。')
+    const extension = file.name.split('.').pop() ?? 'file'
+    const filePath = `${folder}/${crypto.randomUUID()}.${extension}`
+    const uploadResult = await supabase.storage.from('media').upload(filePath, file)
+    if (uploadResult.error) throw uploadResult.error
+    return supabase.storage.from('media').getPublicUrl(filePath).data.publicUrl
+  }
+
+  async function handleUpload(event: React.FormEvent) {
+    event.preventDefault()
+    if (!supabase || !files.length || !uploadEnabled || !form.editPassword) return
+
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+    const oversized = files.find((file) => file.size > fileLimit)
+    if (oversized) {
+      setError(`${form.type === 'image' ? '图片' : '视频'}文件过大，当前最多支持${form.type === 'image' ? '10MB' : '100MB'}。`)
+      return
+    }
+    if (hasStorageQuota && totalBytes > storageStatus.remainingBytes) {
+      setError(`媒体库剩余空间不足，当前还可用 ${formatStorageSize(storageStatus.remainingBytes)}。`)
+      return
+    }
+
+    setUploading(true)
+    setError('')
+
+    try {
+      const uploadedFiles = await Promise.all(files.map((file) => uploadAsset(file, form.type)))
+      const primaryUrl = uploadedFiles[0] ?? ''
+      const { data: insertedMedia, error: insertError } = await supabase.from('media_items').insert({
+        type: form.type,
+        title: form.title,
+        file_url: primaryUrl,
+        cover_url: primaryUrl,
+        generation_id: form.generationId || null,
+        activity_name: form.uploaderName || null,
+        taken_date: form.takenDate || null,
+        year: form.takenDate ? Number(form.takenDate.slice(0, 4)) : null,
+        tags: form.takenDate ? [form.takenDate] : [],
+        is_public: true,
+        edit_password_hash: null,
+      }).select('id').single()
+      if (insertError || !insertedMedia) throw insertError ?? new Error('媒体创建失败。')
+
+      const assetRows = uploadedFiles.map((url, index) => ({
+        media_item_id: insertedMedia.id,
+        file_url: url,
+        cover_url: form.type === 'video' ? primaryUrl : null,
+        asset_type: form.type,
+        sort_order: index,
+      }))
+      const { error: assetError } = await supabase.from('media_item_assets').insert(assetRows)
+      if (assetError) throw assetError
+
+      const { data: passwordOk, error: passwordError } = await supabase.rpc('set_media_edit_password', {
+        media_id: insertedMedia.id,
+        plain_password: form.editPassword,
+      })
+      if (passwordError) throw passwordError
+      if (!passwordOk) throw new Error('编辑密码设置失败。')
+
+      setForm(emptyUploadForm)
+      setFiles([])
+      await refreshMedia()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '媒体上传失败。')
+    }
+
+    setUploading(false)
+  }
+
+  return (
+    <div className="page-stack narrow">
+      <div className="page-heading">
+        <span className="eyebrow">媒体资料</span>
+        <h1>图片与视频资料</h1>
+        <p>图片支持一次填写资料后批量上传，适合按一次活动整理成相册；点进卡片可查看全部照片。</p>
+      </div>
+      {error && <section className="section-card status-warn">{error}</section>}
+      <section className="section-card form-card">
+        <div className="section-title"><h2>上传照片 / 视频</h2><span>{uploadEnabled ? '已开放' : '已关闭'}</span></div>
+        <div className="tag-list storage-tags">
+          <em>已用 {formatStorageSize(storageStatus.usedBytes)}</em>
+          <em>总量 {hasStorageQuota ? formatStorageSize(storageStatus.totalBytes) : '未设置'}</em>
+          <em>剩余 {hasStorageQuota ? formatStorageSize(storageStatus.remainingBytes) : '未设置'}</em>
+        </div>
+        <form className="upload-form" onSubmit={handleUpload}>
+          <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="活动标题" disabled={!hasSupabaseConfig || !uploadEnabled} required />
+          <select value={form.type} onChange={(event) => { setForm((current) => ({ ...current, type: event.target.value as 'image' | 'video' })); setFiles([]); setError('') }} disabled={!hasSupabaseConfig}>
+            {settings.imageUploadEnabled && <option value="image">照片相册</option>}
+            {settings.videoUploadEnabled && <option value="video">视频</option>}
+          </select>
+          <select value={form.generationId} onChange={(event) => setForm((current) => ({ ...current, generationId: event.target.value }))} disabled={!hasSupabaseConfig || !uploadEnabled}>
+            <option value="">不关联届次</option>
+            {generations.map((generation) => <option key={generation.id} value={generation.id}>{generation.name}</option>)}
+          </select>
+          <input value={form.uploaderName} onChange={(event) => setForm((current) => ({ ...current, uploaderName: event.target.value }))} placeholder="上传者姓名" disabled={!hasSupabaseConfig || !uploadEnabled} />
+          <input value={form.takenDate} onChange={(event) => setForm((current) => ({ ...current, takenDate: event.target.value }))} type="date" placeholder="日期" disabled={!hasSupabaseConfig || !uploadEnabled} />
+          <input value={form.editPassword} onChange={(event) => setForm((current) => ({ ...current, editPassword: event.target.value }))} type="password" placeholder="设置编辑密码" disabled={!hasSupabaseConfig || !uploadEnabled} required />
+          <input type="file" multiple={form.type === 'image'} accept={form.type === 'image' ? 'image/*' : 'video/*'} onChange={(event) => handleFileChange(event.target.files)} disabled={!hasSupabaseConfig || !uploadEnabled} required />
+          <small>{form.type === 'image' ? '可一次选择多张图片；以后修改标题、日期或补传图片时，需要输入这里设置的编辑密码。' : '视频仍保持单条上传；后续修改文案也需要编辑密码。'}</small>
+          <div className="form-actions"><button disabled={!hasSupabaseConfig || !uploadEnabled || uploading}>{uploading ? '上传中...' : '上传并发布'}</button></div>
+        </form>
+      </section>
+      <section className="filter-panel">
+        <select value={type} onChange={(event) => setType(event.target.value)}>
+          <option value="all">全部类型</option>
+          <option value="image">图片</option>
+          <option value="video">视频</option>
+        </select>
+        <select value={generationId} onChange={(event) => setGenerationId(event.target.value)}>
+          <option value="">全部届次</option>
+          {generations.map((generation) => <option key={generation.id} value={generation.id}>{generation.name}</option>)}
+        </select>
+      </section>
+      <section className="media-grid">
+        {loading ? <p>媒体加载中...</p> : filteredMedia.length ? filteredMedia.map((item) => {
+          const primaryAsset = item.assets[0]
+          return (
+            <article className="media-card large" key={item.id}>
+              {item.type === 'video' ? (
+                <video src={primaryAsset?.file_url ?? item.file_url} poster={primaryAsset?.cover_url ?? item.cover_url ?? undefined} controls />
+              ) : (
+                <Link to={`/media/${item.id}`} className="media-cover-link">
+                  {primaryAsset?.file_url || item.file_url ? <img src={primaryAsset?.file_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无图片</div>}
+                </Link>
+              )}
+              <div>
+                <strong>{item.title}</strong>
+                <span>{item.type === 'video' ? '视频' : `图片 · 共 ${item.asset_count} 张`} · 上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
+                <div className="tag-list">
+                  {item.generation_id && <em>{generations.find((generation) => generation.id === item.generation_id)?.name}</em>}
+                  {item.type === 'image' && item.asset_count > 1 && <em>{item.asset_count} 张图片</em>}
+                </div>
+                <div className="form-actions media-card-actions">
+                  <Link className="secondary-button" to={`/media/${item.id}`}>{item.type === 'image' ? '查看相册' : '查看详情'}</Link>
+                  <Link className="secondary-button" to={`/media/${item.id}`}>编辑资料</Link>
+                  {item.type === 'image' && primaryAsset?.file_url && <a href={primaryAsset.file_url} download target="_blank" rel="noreferrer">下载首图</a>}
+                </div>
+              </div>
+            </article>
+          )
+        }) : <p className="empty-state">暂无相关资料。</p>}
+      </section>
+    </div>
+  )
+}
