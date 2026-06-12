@@ -8,6 +8,7 @@ const adminLinks = [
   { to: '/admin/taxonomy', label: '学院班级专业' },
   { to: '/admin/tags', label: '身份标签' },
   { to: '/admin/media', label: '媒体管理' },
+  { to: '/admin/image-providers', label: '生图供应商' },
   { to: '/admin/messages', label: '留言管理' },
   { to: '/admin/permissions', label: '权限设置' },
   { to: '/admin/import-export', label: '导入导出' },

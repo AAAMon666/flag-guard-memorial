@@ -91,6 +91,17 @@ blockquote cite { display: block; margin-top: 10px; color: #9b1c1c; font-style: 
 .filter-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; background: #fffaf0; border: 1px solid #ead8ad; border-radius: 24px; padding: 18px; }
 input, select, textarea { width: 100%; border: 1px solid #dec58a; background: #fff; border-radius: 14px; padding: 12px 14px; color: #3f2323; }
 textarea { min-height: 150px; resize: vertical; }
+.segmented-control { display: flex; gap: 10px; flex-wrap: wrap; }
+.segmented-control button { box-shadow: none; }
+.segmented-control .active { background: linear-gradient(135deg, #8b0000, #c79734); color: #fff; }
+.generate-form { display: grid; gap: 14px; }
+.generate-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.generate-options label { display: grid; gap: 8px; color: #5d3330; }
+.generate-options span { font-weight: 700; }
+.generated-grid { align-items: start; }
+.generated-card { grid-template-columns: minmax(220px, 320px) 1fr; align-items: stretch; }
+.generated-card img { height: 100%; min-height: 280px; object-fit: cover; }
+.generated-note { margin: 10px 0 0; color: #684848; line-height: 1.7; word-break: break-word; }
 .member-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .member-card { text-align: center; align-items: center; }
 .member-card img { width: 104px; height: 104px; margin: 8px auto; }
@@ -177,6 +188,7 @@ button.danger { background: #6b1c1c; }
   .image-card { min-height: 340px; }
   .image-card img { height: 340px; }
   .taxonomy-card { max-height: none; }
+  .generate-options, .generated-card { grid-template-columns: 1fr; }
   .media-detail-gallery { grid-template-columns: 1fr; }
   .media-detail-photo img { height: auto; max-height: 70vh; }
 }

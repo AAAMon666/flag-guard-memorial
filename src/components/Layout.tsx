@@ -4,8 +4,9 @@ import { Shield } from 'lucide-react'
 const publicLinks = [
   { to: '/', label: '首页' },
   { to: '/generations', label: '往届点滴' },
-  { to: '/members', label: '成员查询' },
+  { to: '/members', label: '认识队员' },
   { to: '/media', label: '媒体资料' },
+  { to: '/generate', label: '生图板块' },
   { to: '/messages', label: '留言寄语' },
 ]
 

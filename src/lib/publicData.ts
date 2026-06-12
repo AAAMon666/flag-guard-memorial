@@ -64,6 +64,22 @@ export type PublicMessage = {
   created_at: string
 }
 
+export type PublicGeneratedGalleryItem = {
+  id: string
+  title: string
+  prompt: string
+  mode: 'text-to-image' | 'image-to-image'
+  quality: string
+  resolution: string
+  free_size: string
+  provider_name: string
+  model: string
+  image_url: string
+  is_public: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type PublicSettings = {
   imageUploadEnabled: boolean
   videoUploadEnabled: boolean
@@ -194,4 +210,17 @@ export async function loadMediaStorageStatus(): Promise<MediaStorageStatus> {
     usagePercent: Number(row.usage_percent ?? 0),
     objectCount: Number(row.object_count ?? 0),
   }
+}
+
+export async function loadGeneratedGalleryItems(): Promise<PublicGeneratedGalleryItem[]> {
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from('generated_gallery_items')
+    .select('id,title,prompt,mode,quality,resolution,free_size,provider_name,model,image_url,is_public,created_at,updated_at')
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data ?? []
 }

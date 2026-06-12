@@ -10,7 +10,9 @@ import { MemberDetailPage } from './pages/public/MemberDetailPage'
 import { MediaPage } from './pages/public/MediaPage'
 import { MediaDetailPage } from './pages/public/MediaDetailPage'
 import { MessagesPage } from './pages/public/MessagesPage'
+import { GeneratePage } from './pages/public/GeneratePage'
 import { LoginPage } from './pages/public/LoginPage'
+import { AdminImageProvidersPage } from './pages/admin/AdminImageProvidersPage'
 import { hasSupabaseConfig } from './lib/supabase'
 import { useAuth } from './lib/AuthContext'
 import {
@@ -38,6 +40,7 @@ const router = createHashRouter([
       { path: 'members/:id', element: <MemberDetailPage /> },
       { path: 'media', element: <MediaPage /> },
       { path: 'media/:id', element: <MediaDetailPage /> },
+      { path: 'generate', element: <GeneratePage /> },
       { path: 'messages', element: <MessagesPage /> },
       { path: 'login', element: <LoginPage /> },
       {
@@ -50,6 +53,7 @@ const router = createHashRouter([
           { path: 'taxonomy', element: <AdminTaxonomyPage /> },
           { path: 'tags', element: <AdminTagsPage /> },
           { path: 'media', element: <AdminMediaPage /> },
+          { path: 'image-providers', element: <AdminImageProvidersPage /> },
           { path: 'messages', element: <AdminMessagesPage /> },
           { path: 'permissions', element: <AdminPermissionsPage /> },
           { path: 'import-export', element: <AdminImportExportPage /> },
