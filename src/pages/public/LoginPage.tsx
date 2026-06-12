@@ -29,7 +29,7 @@ export function LoginPage() {
     <div className="page-stack narrow">
       <section className="section-card login-card">
         <span className="eyebrow">后台登录</span>
-        <h1>管理员 / 授权成员登录</h1>
+        <h1>管理员登录</h1>
         <p>请输入 Supabase Authentication 中创建的管理员邮箱和密码。</p>
         <form className="form-card" onSubmit={handleSubmit}>
           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="邮箱" type="email" required />

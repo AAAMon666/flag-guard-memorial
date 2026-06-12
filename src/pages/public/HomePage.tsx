@@ -40,12 +40,12 @@ export function HomePage() {
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="hero-section">
         <div className="hero-copy">
-          <span className="eyebrow">国旗护卫队 · 数字纪念馆</span>
-          <h1>把每一届队员、每一次升旗、每一张照片长久留存。</h1>
-          <p>面向国旗护卫队历史展示、成员管理、媒体资料沉淀和留言互动，前台庄重展示，后台可视化维护。</p>
+          <span className="eyebrow">第五届招新 · 往届点滴</span>
+          <h1>在一次次升旗、训练和合影里，认识这支队伍。</h1>
+          <p>第三届、第四届留下的照片、留言和故事，是第五届新同学了解队伍的入口。</p>
           <div className="hero-actions">
-            <Link className="primary-button" to="/generations">浏览届次 <ArrowRight size={18} /></Link>
-            <Link className="ghost-button" to="/members">查找成员</Link>
+            <Link className="primary-button" to="/generations">看看往届点滴 <ArrowRight size={18} /></Link>
+            <Link className="ghost-button" to="/members">认识队员</Link>
           </div>
         </div>
         <div className="hero-card image-card">
@@ -55,14 +55,14 @@ export function HomePage() {
       </section>
 
       <section className="metric-grid">
-        <div><ShieldCheck /><strong>{data.generations.length}</strong><span>届队伍档案</span></div>
+        <div><ShieldCheck /><strong>{data.generations.length}</strong><span>届次记录</span></div>
         <div><Users /><strong>{data.members.length}</strong><span>成员资料</span></div>
         <div><Image /><strong>{data.media.length}</strong><span>媒体资料</span></div>
-        <div><MessageSquare /><strong>{data.messages.length}</strong><span>纪念留言</span></div>
+        <div><MessageSquare /><strong>{data.messages.length}</strong><span>留言寄语</span></div>
       </section>
 
       <section className="section-card">
-        <div className="section-title"><div><span className="eyebrow">届次档案</span><h2>届次入口</h2></div><Link to="/generations">查看全部</Link></div>
+        <div className="section-title"><div><span className="eyebrow">往届点滴</span><h2>届次入口</h2></div><Link to="/generations">查看全部</Link></div>
         <div className="card-grid three">
           {data.generations.map((generation) => (
             <Link className="generation-card" to={`/generations/${generation.id}`} key={generation.id}>
@@ -77,12 +77,12 @@ export function HomePage() {
       <section className="split-grid">
         <div className="section-card">
           <div className="section-title"><div><span className="eyebrow">成员查询</span><h2>快速成员查询</h2></div><Search size={22} /></div>
-          <p>按学院、班级、姓名定位成员个人页，支持一名成员关联多个届次与不同身份标签。</p>
+          <p>按学院、班级、姓名定位成员个人页，看看他们在不同届次留下的身份和片段。</p>
           <Link className="primary-button compact" to="/members">进入查询</Link>
         </div>
         <div className="section-card message-wall">
-          <div className="section-title"><div><span className="eyebrow">留言纪念</span><h2>留言精选</h2></div></div>
-          {data.messages.slice(0, 3).map((message) => <blockquote key={message.id}>{message.content}<cite>— {message.author_name}</cite></blockquote>)}
+          <div className="section-title"><div><span className="eyebrow">留言寄语</span><h2>留言精选</h2></div></div>
+          {data.messages.length ? data.messages.slice(0, 3).map((message) => <blockquote key={message.id}>{message.content}<cite>— {message.author_name}</cite></blockquote>) : <p>暂无留言，等你留下第一句寄语。</p>}
         </div>
       </section>
     </div>

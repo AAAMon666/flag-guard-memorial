@@ -100,15 +100,17 @@ export function MemberDetailPage() {
 
       <section className="section-card">
         <div className="section-title"><h2>相关媒体资料</h2></div>
-        <div className="card-grid three">
-          {data.media.map((item) => (
-            <article className="media-card" key={item.id}>
-              <img src={item.cover_url ?? item.file_url} alt={item.title} />
-              <strong>{item.title}</strong>
-              <span>{item.activity_name}</span>
-            </article>
-          ))}
-        </div>
+        {data.media.length ? (
+          <div className="card-grid three">
+            {data.media.map((item) => (
+              <article className="media-card" key={item.id}>
+                {item.cover_url || item.file_url ? <img src={item.cover_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无封面</div>}
+                <strong>{item.title}</strong>
+                <span>{item.activity_name}</span>
+              </article>
+            ))}
+          </div>
+        ) : <p>暂无相关媒体。</p>}
       </section>
     </div>
   )

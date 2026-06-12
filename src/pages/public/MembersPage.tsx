@@ -64,7 +64,7 @@ export function MembersPage() {
         <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="输入姓名" />
       </section>
       <section className="member-grid">
-        {filteredMembers.map((member) => (
+        {filteredMembers.length ? filteredMembers.map((member) => (
           <Link className="member-card" to={`/members/${member.id}`} key={member.id}>
             {member.avatar ? <img src={member.avatar} alt={member.name} /> : <div className="avatar-placeholder card-avatar">{member.name.slice(0, 1)}</div>}
             <strong>{member.name}</strong>
@@ -72,7 +72,7 @@ export function MembersPage() {
             <span>{member.gender || '未填写性别'} · {member.retired_status ? '已退役' : '在队'}</span>
             <div className="tag-list">{member.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>
           </Link>
-        ))}
+        )) : <p className="empty-state">暂无匹配成员。</p>}
       </section>
     </div>
   )

@@ -30,9 +30,9 @@ export function GenerationsPage() {
   return (
     <div className="page-stack narrow">
       <div className="page-heading">
-        <span className="eyebrow">届次档案</span>
-        <h1>届次档案</h1>
-        <p>按届次沉淀队伍简介、成员名单、媒体资料、活动记录与留言。</p>
+        <span className="eyebrow">往届点滴</span>
+        <h1>往届点滴</h1>
+        <p>按届次看队伍简介、成员名单、媒体资料、活动记录与留言。</p>
       </div>
       {error && <section className="section-card status-warn">{error}</section>}
       <div className="card-grid two">

@@ -157,7 +157,7 @@ export function MessagesPage() {
   return (
     <div className="page-stack narrow">
       <div className="page-heading">
-        <span className="eyebrow">留言纪念</span>
+        <span className="eyebrow">留言寄语</span>
         <h1>留言与寄语</h1>
         <p>留言提交后会立即展示，选择届次后也会同步显示在对应届次详情页。</p>
       </div>
@@ -175,7 +175,7 @@ export function MessagesPage() {
         </form>
       </section>
       <section className="section-card message-wall">
-        {loading ? <p>留言加载中...</p> : messages.map((message) => {
+        {loading ? <p>留言加载中...</p> : messages.length ? messages.map((message) => {
           const messageComments = comments.filter((comment) => comment.message_id === message.id)
           const form = commentForms[message.id] ?? { authorName: '', content: '' }
           return (
@@ -195,7 +195,7 @@ export function MessagesPage() {
               </form>
             </article>
           )
-        })}
+        }) : <p>暂无留言，等你留下第一句寄语。</p>}
       </section>
     </div>
   )

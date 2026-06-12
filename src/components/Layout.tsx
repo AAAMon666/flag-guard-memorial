@@ -3,10 +3,10 @@ import { Shield } from 'lucide-react'
 
 const publicLinks = [
   { to: '/', label: '首页' },
-  { to: '/generations', label: '届次' },
+  { to: '/generations', label: '往届点滴' },
   { to: '/members', label: '成员查询' },
   { to: '/media', label: '媒体资料' },
-  { to: '/messages', label: '留言纪念' },
+  { to: '/messages', label: '留言寄语' },
 ]
 
 export function Layout() {
@@ -16,8 +16,8 @@ export function Layout() {
         <Link className="brand" to="/">
           <span className="brand-mark"><Shield size={24} /></span>
           <span>
-            <strong>国旗护卫队纪念网站</strong>
-            <small>National Flag Guard Memorial</small>
+            <strong>向旗而行</strong>
+            <small>从往届点滴开始认识我们</small>
           </span>
         </Link>
         <nav>
@@ -35,7 +35,7 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="site-footer">
-        <span>以青春护卫国旗，以记忆连接每一届队员。</span>
+        <span>从往届点滴开始认识我们。</span>
         <span>GitHub Pages + Supabase</span>
       </footer>
     </div>

@@ -136,7 +136,7 @@ export function MediaPage() {
       <div className="page-heading">
         <span className="eyebrow">媒体资料</span>
         <h1>图片与视频资料</h1>
-        <p>支持按届次和类型筛选，也可以直接上传照片或视频留存。选择届次后，资料会显示在对应届次详情页。图片最多 10MB，视频最多 100MB。</p>
+        <p>按届次和类型筛选，也可以直接上传照片或视频留存。选择届次后，资料会显示在对应届次详情页。图片最多 10MB，视频最多 100MB。</p>
       </div>
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="section-card form-card">
@@ -175,17 +175,17 @@ export function MediaPage() {
         </select>
       </section>
       <section className="media-grid">
-        {loading ? <p>媒体加载中...</p> : filteredMedia.map((item) => (
+        {loading ? <p>媒体加载中...</p> : filteredMedia.length ? filteredMedia.map((item) => (
           <article className="media-card large" key={item.id}>
-            {item.type === 'video' ? <video src={item.file_url} poster={item.cover_url ?? undefined} controls /> : <img src={item.file_url} alt={item.title} />}
+            {item.type === 'video' ? <video src={item.file_url} poster={item.cover_url ?? undefined} controls /> : (item.file_url ? <img src={item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无图片</div>)}
             <div>
               <strong>{item.title}</strong>
               <span>上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
               <div className="tag-list">{item.generation_id && <em>{generations.find((generation) => generation.id === item.generation_id)?.name}</em>}</div>
-              {item.type === 'image' && <a href={item.file_url} download target="_blank" rel="noreferrer">下载图片</a>}
+              {item.type === 'image' && item.file_url && <a href={item.file_url} download target="_blank" rel="noreferrer">下载图片</a>}
             </div>
           </article>
-        ))}
+        )) : <p className="empty-state">暂无相关资料。</p>}
       </section>
     </div>
   )

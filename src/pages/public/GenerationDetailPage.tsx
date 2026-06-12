@@ -55,28 +55,32 @@ export function GenerationDetailPage() {
 
       <section className="section-card">
         <div className="section-title"><h2>成员名单</h2><span>{members.length} 人</span></div>
-        <div className="member-list">
-          {members.map((member) => (
-            <Link className="member-row" key={member.id} to={`/members/${member.id}`}>
-              {member.avatar ? <img src={member.avatar} alt={member.name} /> : <div className="avatar-placeholder">{member.name.slice(0, 1)}</div>}
-              <div><strong>{member.name}</strong><span>{member.gender || '未填写性别'} · {member.remark}</span></div>
-              <div className="tag-list">{member.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>
-            </Link>
-          ))}
-        </div>
+        {members.length ? (
+          <div className="member-list">
+            {members.map((member) => (
+              <Link className="member-row" key={member.id} to={`/members/${member.id}`}>
+                {member.avatar ? <img src={member.avatar} alt={member.name} /> : <div className="avatar-placeholder">{member.name.slice(0, 1)}</div>}
+                <div><strong>{member.name}</strong><span>{member.gender || '未填写性别'} · {member.remark}</span></div>
+                <div className="tag-list">{member.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>
+              </Link>
+            ))}
+          </div>
+        ) : <p>暂无成员资料。</p>}
       </section>
 
       <section className="section-card">
         <div className="section-title"><h2>图片 / 视频</h2><Link to="/media">更多媒体</Link></div>
-        <div className="card-grid three">
-          {media.map((item) => (
-            <article className="media-card" key={item.id}>
-              <img src={item.cover_url ?? item.file_url} alt={item.title} />
-              <strong>{item.title}</strong>
-              <span>{item.type === 'video' ? '视频' : '图片'} · 上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
-            </article>
-          ))}
-        </div>
+        {media.length ? (
+          <div className="card-grid three">
+            {media.map((item) => (
+              <article className="media-card" key={item.id}>
+                {item.cover_url || item.file_url ? <img src={item.cover_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无封面</div>}
+                <strong>{item.title}</strong>
+                <span>{item.type === 'video' ? '视频' : '图片'} · 上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
+              </article>
+            ))}
+          </div>
+        ) : <p>暂无相关媒体。</p>}
       </section>
 
       <section className="section-card message-wall">
