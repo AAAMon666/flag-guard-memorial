@@ -8,6 +8,7 @@ import { GenerationDetailPage } from './pages/public/GenerationDetailPage'
 import { MembersPage } from './pages/public/MembersPage'
 import { MemberDetailPage } from './pages/public/MemberDetailPage'
 import { MediaPage } from './pages/public/MediaPage'
+import { MediaDetailPage } from './pages/public/MediaDetailPage'
 import { MessagesPage } from './pages/public/MessagesPage'
 import { LoginPage } from './pages/public/LoginPage'
 import { hasSupabaseConfig } from './lib/supabase'
@@ -36,6 +37,7 @@ const router = createHashRouter([
       { path: 'members', element: <MembersPage /> },
       { path: 'members/:id', element: <MemberDetailPage /> },
       { path: 'media', element: <MediaPage /> },
+      { path: 'media/:id', element: <MediaDetailPage /> },
       { path: 'messages', element: <MessagesPage /> },
       { path: 'login', element: <LoginPage /> },
       {

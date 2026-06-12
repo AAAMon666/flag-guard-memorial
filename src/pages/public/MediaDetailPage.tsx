@@ -1,0 +1,311 @@
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { useAuth } from '../../lib/AuthContext'
+import { hasSupabaseConfig, supabase } from '../../lib/supabase'
+import { loadPublicData } from '../../lib/publicData'
+import type { PublicGeneration, PublicMedia } from '../../lib/publicData'
+
+type EditForm = {
+  title: string
+  generationId: string
+  uploaderName: string
+  takenDate: string
+  isPublic: boolean
+  password: string
+  nextPassword: string
+}
+
+const emptyEditForm: EditForm = {
+  title: '',
+  generationId: '',
+  uploaderName: '',
+  takenDate: '',
+  isPublic: true,
+  password: '',
+  nextPassword: '',
+}
+
+export function MediaDetailPage() {
+  const { id } = useParams()
+  const { session } = useAuth()
+  const [media, setMedia] = useState<PublicMedia | null>(null)
+  const [generations, setGenerations] = useState<PublicGeneration[]>([])
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState<EditForm>(emptyEditForm)
+  const [pendingAssetFiles, setPendingAssetFiles] = useState<File[]>([])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const canAdminEdit = Boolean(session)
+
+  async function loadMedia() {
+    if (!supabase || !hasSupabaseConfig) {
+      setError('尚未配置 Supabase，无法加载真实媒体详情。')
+      return
+    }
+
+    const data = await loadPublicData()
+    const current = data.media.find((item) => item.id === id) ?? null
+    setMedia(current)
+    setGenerations(data.generations)
+    setError('')
+  }
+
+  useEffect(() => {
+    loadMedia().catch((err) => setError(err instanceof Error ? err.message : '媒体详情加载失败。'))
+  }, [id])
+
+  function startEdit(item: PublicMedia) {
+    setEditing(true)
+    setPendingAssetFiles([])
+    setEditForm({
+      title: item.title,
+      generationId: item.generation_id ?? '',
+      uploaderName: item.activity_name ?? '',
+      takenDate: item.taken_date ?? '',
+      isPublic: item.is_public,
+      password: '',
+      nextPassword: '',
+    })
+    setError('')
+  }
+
+  function cancelEdit() {
+    setEditing(false)
+    setPendingAssetFiles([])
+    setEditForm(emptyEditForm)
+  }
+
+  async function uploadAsset(file: File) {
+    if (!supabase) throw new Error('尚未配置 Supabase。')
+    const extension = file.name.split('.').pop() ?? 'file'
+    const filePath = `image/${crypto.randomUUID()}.${extension}`
+    const uploadResult = await supabase.storage.from('media').upload(filePath, file)
+    if (uploadResult.error) throw uploadResult.error
+    return supabase.storage.from('media').getPublicUrl(filePath).data.publicUrl
+  }
+
+  async function saveEdit(item: PublicMedia) {
+    if (!supabase) return
+    if (!editForm.title || (!canAdminEdit && !editForm.password)) {
+      setError(canAdminEdit ? '请填写标题。' : '请填写标题和编辑密码。')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+
+    try {
+      if (canAdminEdit) {
+        const { error: updateError } = await supabase.from('media_items').update({
+          title: editForm.title,
+          generation_id: editForm.generationId || null,
+          activity_name: editForm.uploaderName || null,
+          taken_date: editForm.takenDate || null,
+          year: editForm.takenDate ? Number(editForm.takenDate.slice(0, 4)) : null,
+          tags: editForm.takenDate ? [editForm.takenDate] : [],
+          is_public: editForm.isPublic,
+          updated_at: new Date().toISOString(),
+        }).eq('id', item.id)
+        if (updateError) throw updateError
+
+        if (editForm.nextPassword) {
+          const { error: passwordError } = await supabase.rpc('admin_update_media_edit_password', {
+            media_id: item.id,
+            new_password: editForm.nextPassword,
+          })
+          if (passwordError) throw passwordError
+        }
+      } else {
+        const { data: updateOk, error: updateError } = await supabase.rpc('update_media_with_password', {
+          media_id: item.id,
+          plain_password: editForm.password,
+          next_title: editForm.title,
+          next_generation_id: editForm.generationId || null,
+          next_activity_name: editForm.uploaderName || null,
+          next_taken_date: editForm.takenDate || null,
+          next_is_public: editForm.isPublic,
+        })
+        if (updateError) throw updateError
+        if (!updateOk) throw new Error('编辑密码不正确。')
+
+        if (editForm.nextPassword) {
+          const { data: passwordOk, error: passwordError } = await supabase.rpc('change_media_edit_password_with_password', {
+            media_id: item.id,
+            old_password: editForm.password,
+            new_password: editForm.nextPassword,
+          })
+          if (passwordError) throw passwordError
+          if (!passwordOk) throw new Error('编辑密码不正确。')
+        }
+      }
+
+      if (item.type === 'image' && pendingAssetFiles.length) {
+        const uploadedFiles = await Promise.all(pendingAssetFiles.map((file) => uploadAsset(file)))
+        if (canAdminEdit) {
+          const assetRows = uploadedFiles.map((url, index) => ({
+            media_item_id: item.id,
+            file_url: url,
+            cover_url: null,
+            asset_type: 'image',
+            sort_order: item.asset_count + index,
+          }))
+          const { error: assetError } = await supabase.from('media_item_assets').insert(assetRows)
+          if (assetError) throw assetError
+        } else {
+          for (const url of uploadedFiles) {
+            const { data: assetOk, error: assetError } = await supabase.rpc('add_media_asset_with_password', {
+              media_id: item.id,
+              plain_password: editForm.password,
+              next_file_url: url,
+              next_cover_url: null,
+              next_asset_type: 'image',
+            })
+            if (assetError) throw assetError
+            if (!assetOk) throw new Error('编辑密码不正确。')
+          }
+        }
+      }
+
+      await loadMedia()
+      cancelEdit()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '媒体更新失败。')
+    }
+
+    setSaving(false)
+  }
+
+  async function deleteAsset(item: PublicMedia, assetId: string) {
+    if (!supabase) return
+    if (item.asset_count <= 1) {
+      setError('相册至少保留一张图片。')
+      return
+    }
+
+    if (canAdminEdit) {
+      const { error: deleteError } = await supabase.from('media_item_assets').delete().eq('id', assetId)
+      if (deleteError) setError(deleteError.message)
+      else await loadMedia()
+      return
+    }
+
+    const { data: deleteOk, error: deleteError } = await supabase.rpc('delete_media_asset_with_password', {
+      media_id: item.id,
+      asset_id: assetId,
+      plain_password: editForm.password,
+    })
+    if (deleteError) setError(deleteError.message)
+    else if (!deleteOk) setError('编辑密码不正确，或相册只剩最后一张图片。')
+    else await loadMedia()
+  }
+
+  async function setPrimaryAsset(item: PublicMedia, assetId: string) {
+    if (!supabase) return
+    const client = supabase
+    const asset = item.assets.find((current) => current.id === assetId)
+    if (!asset) return
+
+    if (!canAdminEdit) {
+      const { data: updateOk, error: updateError } = await supabase.rpc('set_media_primary_asset_with_password', {
+        media_id: item.id,
+        asset_id: assetId,
+        plain_password: editForm.password,
+      })
+      if (updateError) setError(updateError.message)
+      else if (!updateOk) setError('编辑密码不正确。')
+      else await loadMedia()
+      return
+    }
+
+    const sortedIds = [assetId, ...item.assets.filter((current) => current.id !== assetId).map((current) => current.id)]
+    const updateResults = await Promise.all(sortedIds.map((currentId, index) => client.from('media_item_assets').update({ sort_order: index }).eq('id', currentId)))
+    const failed = updateResults.find((result) => result.error)
+    if (failed?.error) {
+      setError(failed.error.message)
+      return
+    }
+
+    const { error: coverError } = await supabase.from('media_items').update({
+      file_url: asset.file_url,
+      cover_url: asset.cover_url ?? asset.file_url,
+      updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
+    if (coverError) setError(coverError.message)
+    else await loadMedia()
+  }
+
+  if (!media) {
+    return <div className="page-stack narrow">{error && <section className="section-card status-warn">{error}</section>}<section className="section-card">该媒体不存在或已被删除。</section></div>
+  }
+
+  const primaryAsset = media.assets[0]
+
+  return (
+    <div className="page-stack narrow">
+      {error && <section className="section-card status-warn">{error}</section>}
+      <section className="section-card media-detail-card">
+        <div className="section-title">
+          <div>
+            <span className="eyebrow">媒体详情</span>
+            <h1>{media.title}</h1>
+          </div>
+          <Link to="/media">返回媒体资料</Link>
+        </div>
+        {media.type === 'video' ? (
+          <video className="media-detail-video" src={primaryAsset?.file_url ?? media.file_url} poster={primaryAsset?.cover_url ?? media.cover_url ?? undefined} controls />
+        ) : (
+          <div className="media-detail-main-image">
+            <img src={primaryAsset?.file_url ?? media.file_url} alt={media.title} />
+          </div>
+        )}
+        <p>{media.type === 'video' ? '视频' : `图片 · 共 ${media.asset_count} 张`} · 上传者：{media.activity_name ?? '未填写'} · 日期：{media.taken_date ?? media.year ?? '未填写'}</p>
+        <div className="tag-list">
+          {media.generation_id && <em>{generations.find((generation) => generation.id === media.generation_id)?.name}</em>}
+          {!media.is_public && <em>未公开</em>}
+        </div>
+        <div className="form-actions">
+          <button type="button" className="secondary-button" onClick={() => editing ? cancelEdit() : startEdit(media)}>{editing ? '取消编辑' : '编辑资料'}</button>
+          {media.type === 'image' && primaryAsset?.file_url && <a href={primaryAsset.file_url} download target="_blank" rel="noreferrer">下载首图</a>}
+        </div>
+      </section>
+
+      {media.type === 'image' && (
+        <section className="section-card">
+          <div className="section-title"><h2>全部照片</h2><span>{media.asset_count} 张</span></div>
+          <div className="media-detail-gallery">
+            {media.assets.map((asset, index) => (
+              <article className="media-detail-photo" key={asset.id}>
+                <img src={asset.file_url} alt={`${media.title}-${index + 1}`} />
+                <div className="form-actions">
+                  <a href={asset.file_url} download target="_blank" rel="noreferrer">下载</a>
+                  {editing && media.asset_count > 1 && <button type="button" className="secondary-button" onClick={() => deleteAsset(media, asset.id)}>删除</button>}
+                  {editing && media.assets[0]?.id !== asset.id && <button type="button" className="secondary-button" onClick={() => setPrimaryAsset(media, asset.id)}>设为首图</button>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {editing && (
+        <section className="section-card form-card">
+          <h2>编辑资料</h2>
+          <input value={editForm.title} onChange={(event) => setEditForm((current) => ({ ...current, title: event.target.value }))} placeholder="活动标题" />
+          <select value={editForm.generationId} onChange={(event) => setEditForm((current) => ({ ...current, generationId: event.target.value }))}>
+            <option value="">不关联届次</option>
+            {generations.map((generation) => <option key={generation.id} value={generation.id}>{generation.name}</option>)}
+          </select>
+          <input value={editForm.uploaderName} onChange={(event) => setEditForm((current) => ({ ...current, uploaderName: event.target.value }))} placeholder="上传者姓名" />
+          <input value={editForm.takenDate} onChange={(event) => setEditForm((current) => ({ ...current, takenDate: event.target.value }))} type="date" />
+          <label><input type="checkbox" checked={editForm.isPublic} onChange={(event) => setEditForm((current) => ({ ...current, isPublic: event.target.checked }))} /> 公开显示</label>
+          {!canAdminEdit && <input value={editForm.password} onChange={(event) => setEditForm((current) => ({ ...current, password: event.target.value }))} type="password" placeholder="当前编辑密码" />}
+          <input value={editForm.nextPassword} onChange={(event) => setEditForm((current) => ({ ...current, nextPassword: event.target.value }))} type="password" placeholder={canAdminEdit ? '管理员重置新密码（可选）' : '修改为新密码（可选）'} />
+          {media.type === 'image' && <input type="file" multiple accept="image/*" onChange={(event) => setPendingAssetFiles(Array.from(event.target.files ?? []))} />}
+          {pendingAssetFiles.length > 0 && <small>待追加 {pendingAssetFiles.length} 张图片。</small>}
+          <div className="form-actions"><button type="button" disabled={saving} onClick={() => saveEdit(media)}>{saving ? '保存中...' : '保存修改'}</button></div>
+        </section>
+      )}
+    </div>
+  )
+}
