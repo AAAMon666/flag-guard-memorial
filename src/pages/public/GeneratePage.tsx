@@ -27,6 +27,14 @@ type GeneratedResult = {
   modelName: string
 }
 
+type PreviewItem = {
+  title: string
+  imageUrl: string
+  prompt: string
+  meta: string
+  fileName: string
+}
+
 const emptyForm: GenerateForm = {
   prompt: '',
   resolution: '4K',
@@ -61,8 +69,8 @@ function buildWorkTitle(prompt: string, index: number) {
   return trimmed ? `${trimmed.slice(0, 24)}${trimmed.length > 24 ? '...' : ''} #${index + 1}` : `作品 ${index + 1}`
 }
 
-function buildDownloadFileName(prompt: string, index: number) {
-  const base = prompt.trim().replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim()
+function buildDownloadFileName(name: string, index = 0) {
+  const base = name.trim().replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim()
   const safeBase = (base || `generated-${index + 1}`).slice(0, 40)
   return `${safeBase}-${index + 1}.png`
 }
@@ -95,6 +103,42 @@ async function extractFunctionErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+async function downloadImageFile(fileUrl: string, fileName: string) {
+  if (typeof document === 'undefined') return
+
+  const link = document.createElement('a')
+  link.download = fileName
+
+  if (fileUrl.startsWith('data:')) {
+    link.href = fileUrl
+    link.click()
+    return
+  }
+
+  const response = await fetch(fileUrl)
+  if (!response.ok) {
+    throw new Error('下载作品失败，请稍后重试。')
+  }
+
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+
+  try {
+    link.href = objectUrl
+    link.click()
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  }
+}
+
+function buildResultMeta(result: GeneratedResult) {
+  return `${result.providerName || '当前供应商'} / ${result.modelName || '默认模型'} / ${result.resolution} / ${result.quality}`
+}
+
+function buildGalleryMeta(item: PublicGeneratedGalleryItem) {
+  return `${item.provider_name || '公开作品'} / ${item.model || '默认模型'} / ${new Date(item.created_at).toLocaleString()}`
+}
+
 export function GeneratePage() {
   const [mode, setMode] = useState<GenerateMode>('text-to-image')
   const [form, setForm] = useState<GenerateForm>(emptyForm)
@@ -104,9 +148,24 @@ export function GeneratePage() {
   const [loadingGallery, setLoadingGallery] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [savingIds, setSavingIds] = useState<string[]>([])
+  const [downloadingName, setDownloadingName] = useState('')
+  const [previewItem, setPreviewItem] = useState<PreviewItem | null>(null)
   const [error, setError] = useState('')
 
   const countOptions = useMemo(() => [1, 2, 3, 4], [])
+
+  useEffect(() => {
+    if (!previewItem) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPreviewItem(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [previewItem])
 
   async function refreshGallery() {
     setLoadingGallery(true)
@@ -130,6 +189,42 @@ export function GeneratePage() {
 
   function removeReferenceFile(file: File) {
     setReferenceFiles((current) => current.filter((item) => fileKey(item) !== fileKey(file)))
+  }
+
+  function openResultPreview(result: GeneratedResult, index: number) {
+    const imageUrl = result.imageDataUrl ?? result.imageUrl
+    if (!imageUrl) return
+
+    setPreviewItem({
+      title: buildWorkTitle(result.prompt, index),
+      imageUrl,
+      prompt: result.prompt,
+      meta: buildResultMeta(result),
+      fileName: buildDownloadFileName(result.prompt, index),
+    })
+  }
+
+  function openGalleryPreview(item: PublicGeneratedGalleryItem, index: number) {
+    setPreviewItem({
+      title: item.title || `作品 ${index + 1}`,
+      imageUrl: item.image_url,
+      prompt: item.prompt,
+      meta: buildGalleryMeta(item),
+      fileName: buildDownloadFileName(item.title || item.prompt || `gallery-${index + 1}`, index),
+    })
+  }
+
+  async function handleDownload(fileUrl: string, fileName: string) {
+    setDownloadingName(fileName)
+    setError('')
+
+    try {
+      await downloadImageFile(fileUrl, fileName)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '下载作品失败，请稍后重试。')
+    } finally {
+      setDownloadingName('')
+    }
   }
 
   async function handleGenerate(event: React.FormEvent) {
@@ -191,13 +286,14 @@ export function GeneratePage() {
     } catch (err) {
       setError(await extractFunctionErrorMessage(err, '生图失败。'))
       setResults([])
+    } finally {
+      setGenerating(false)
     }
-
-    setGenerating(false)
   }
 
   async function publishResult(result: GeneratedResult, index: number) {
     if (!supabase) return
+
     setSavingIds((current) => [...current, result.id])
     setError('')
 
@@ -222,9 +318,9 @@ export function GeneratePage() {
       await refreshGallery()
     } catch (err) {
       setError(await extractFunctionErrorMessage(err, '保存作品失败。'))
+    } finally {
+      setSavingIds((current) => current.filter((id) => id !== result.id))
     }
-
-    setSavingIds((current) => current.filter((id) => id !== result.id))
   }
 
   return (
@@ -319,40 +415,55 @@ export function GeneratePage() {
         </div>
         {results.length ? (
           <div className="media-grid generated-grid">
-            {results.map((result, index) => (
-              <article className="media-card large generated-card" key={result.id}>
-                {result.imageDataUrl || result.imageUrl ? (
-                  <img src={result.imageDataUrl ?? result.imageUrl} alt={`生成结果 ${index + 1}`} />
-                ) : (
-                  <div className="media-placeholder">暂无图片</div>
-                )}
-                <div>
-                  <strong>{buildWorkTitle(result.prompt, index)}</strong>
-                  <span>{result.providerName || '当前供应商'} / {result.modelName || '默认模型'} / {result.resolution} / {result.quality}</span>
-                  {result.revisedPrompt && <p className="generated-note">模型改写提示词：{result.revisedPrompt}</p>}
-                  <div className="form-actions media-card-actions">
-                    <button
-                      type="button"
-                      disabled={savingIds.includes(result.id)}
-                      onClick={() => publishResult(result, index)}
-                    >
-                      {savingIds.includes(result.id) ? '保存中...' : '保存到作品集'}
+            {results.map((result, index) => {
+              const imageUrl = result.imageDataUrl ?? result.imageUrl
+              const fileName = buildDownloadFileName(result.prompt, index)
+
+              return (
+                <article className="media-card large generated-card" key={result.id}>
+                  {imageUrl ? (
+                    <button type="button" className="media-preview-button" onClick={() => openResultPreview(result, index)}>
+                      <img src={imageUrl} alt={`生成结果 ${index + 1}`} />
                     </button>
-                    {(result.imageDataUrl || result.imageUrl) && (
-                      <a
-                        className="secondary-button button-link"
-                        href={result.imageDataUrl ?? result.imageUrl}
-                        download={buildDownloadFileName(result.prompt, index)}
-                        target="_blank"
-                        rel="noreferrer"
+                  ) : (
+                    <div className="media-placeholder">暂无图片</div>
+                  )}
+                  <div>
+                    <strong>{buildWorkTitle(result.prompt, index)}</strong>
+                    <span>{buildResultMeta(result)}</span>
+                    {result.revisedPrompt && <p className="generated-note">模型改写提示词：{result.revisedPrompt}</p>}
+                    <div className="form-actions media-card-actions">
+                      <button
+                        type="button"
+                        disabled={savingIds.includes(result.id)}
+                        onClick={() => publishResult(result, index)}
                       >
-                        下载图片
-                      </a>
-                    )}
+                        {savingIds.includes(result.id) ? '保存中...' : '保存到作品集'}
+                      </button>
+                      {imageUrl && (
+                        <>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openResultPreview(result, index)}
+                          >
+                            查看大图
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={downloadingName === fileName}
+                            onClick={() => handleDownload(imageUrl, fileName)}
+                          >
+                            {downloadingName === fileName ? '下载中...' : '下载图片'}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         ) : (
           <p className="empty-state">当前还没有生成结果，输入提示词后即可开始。</p>
@@ -366,26 +477,77 @@ export function GeneratePage() {
         </div>
         {galleryItems.length ? (
           <div className="media-grid generated-grid">
-            {galleryItems.map((item) => (
-              <article className="media-card" key={item.id}>
-                <img src={item.image_url} alt={item.title} />
-                <div>
-                  <strong>{item.title || '未命名作品'}</strong>
-                  <span>{item.provider_name || '公开作品'} / {item.model || '默认模型'} / {new Date(item.created_at).toLocaleString()}</span>
-                  <p className="generated-note">{item.prompt}</p>
-                  <div className="tag-list">
-                    <em>{item.mode === 'text-to-image' ? '文生图' : '图生图'}</em>
-                    <em>{item.resolution}</em>
-                    <em>{item.quality}</em>
+            {galleryItems.map((item, index) => {
+              const fileName = buildDownloadFileName(item.title || item.prompt || `gallery-${index + 1}`, index)
+
+              return (
+                <article className="media-card" key={item.id}>
+                  <button type="button" className="media-preview-button" onClick={() => openGalleryPreview(item, index)}>
+                    <img src={item.image_url} alt={item.title} />
+                  </button>
+                  <div className="gallery-card-copy">
+                    <strong>{item.title || '未命名作品'}</strong>
+                    <span>{buildGalleryMeta(item)}</span>
+                    <p className="generated-note">{item.prompt}</p>
+                    <div className="tag-list">
+                      <em>{item.mode === 'text-to-image' ? '文生图' : '图生图'}</em>
+                      <em>{item.resolution}</em>
+                      <em>{item.quality}</em>
+                    </div>
+                    <div className="form-actions media-card-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => openGalleryPreview(item, index)}
+                      >
+                        查看大图
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={downloadingName === fileName}
+                        onClick={() => handleDownload(item.image_url, fileName)}
+                      >
+                        {downloadingName === fileName ? '下载中...' : '下载作品'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         ) : (
           <p className="empty-state">{loadingGallery ? '作品集加载中...' : '作品欣赏集还没有公开作品。'}</p>
         )}
       </section>
+
+      {previewItem && (
+        <div className="preview-modal" role="dialog" aria-modal="true" onClick={() => setPreviewItem(null)}>
+          <div className="preview-modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="preview-modal-header">
+              <div>
+                <strong>{previewItem.title}</strong>
+                <span>{previewItem.meta}</span>
+              </div>
+              <button type="button" className="secondary-button" onClick={() => setPreviewItem(null)}>关闭</button>
+            </div>
+            <div className="preview-modal-image">
+              <img src={previewItem.imageUrl} alt={previewItem.title} />
+            </div>
+            <p className="generated-note">{previewItem.prompt}</p>
+            <div className="form-actions">
+              <button
+                type="button"
+                onClick={() => handleDownload(previewItem.imageUrl, previewItem.fileName)}
+                disabled={downloadingName === previewItem.fileName}
+              >
+                {downloadingName === previewItem.fileName ? '下载中...' : '下载图片'}
+              </button>
+              <button type="button" className="secondary-button" onClick={() => setPreviewItem(null)}>返回</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

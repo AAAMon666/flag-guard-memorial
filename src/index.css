@@ -102,6 +102,70 @@ textarea { min-height: 150px; resize: vertical; }
 .generated-card { grid-template-columns: minmax(220px, 320px) 1fr; align-items: stretch; }
 .generated-card img { height: 100%; min-height: 280px; object-fit: cover; }
 .generated-note { margin: 10px 0 0; color: #684848; line-height: 1.7; word-break: break-word; }
+.media-preview-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+  cursor: zoom-in;
+}
+.media-preview-button img { width: 100%; height: 180px; object-fit: cover; }
+.generated-card .media-preview-button img { height: 100%; min-height: 280px; }
+.gallery-card-copy { display: grid; gap: 10px; }
+.preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(31, 20, 20, .74);
+}
+.preview-modal-card {
+  width: min(980px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border-radius: 22px;
+  background: #fffaf0;
+  border: 1px solid #ead8ad;
+  box-shadow: 0 28px 60px rgba(31, 20, 20, .28);
+}
+.preview-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.preview-modal-header strong {
+  display: block;
+  color: #540000;
+  font-size: 24px;
+}
+.preview-modal-header span {
+  display: block;
+  margin-top: 6px;
+  color: #7a5a4f;
+}
+.preview-modal-image {
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #ecd9ad;
+}
+.preview-modal-image img {
+  width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  background: #fff7e6;
+}
 .member-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .member-card { text-align: center; align-items: center; }
 .member-card img { width: 104px; height: 104px; margin: 8px auto; }
@@ -192,4 +256,7 @@ button.danger { background: #6b1c1c; }
   .generate-options, .generated-card { grid-template-columns: 1fr; }
   .media-detail-gallery { grid-template-columns: 1fr; }
   .media-detail-photo img { height: auto; max-height: 70vh; }
+  .preview-modal { padding: 16px; }
+  .preview-modal-card { padding: 18px; max-height: calc(100vh - 32px); }
+  .preview-modal-header { flex-direction: column; }
 }
