@@ -42,6 +42,11 @@ const emptyForm: GenerateForm = {
   count: 1,
 }
 
+const supportedReferenceTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
+const maxReferenceDimension = 1600
+const referenceJpegQuality = 0.86
+const referenceMaxBytes = 1.5 * 1024 * 1024
+
 function fileKey(file: File) {
   return `${file.name}-${file.size}-${file.lastModified}`
 }
@@ -62,6 +67,61 @@ function readFileAsDataUrl(file: File) {
     reader.onerror = () => reject(new Error('参考图读取失败。'))
     reader.readAsDataURL(file)
   })
+}
+
+function loadImageElement(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    const objectUrl = URL.createObjectURL(file)
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      resolve(image)
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('参考图读取失败。'))
+    }
+
+    image.src = objectUrl
+  })
+}
+
+async function normalizeReferenceImage(file: File) {
+  if (supportedReferenceTypes.has(file.type) && file.size <= 1024 * 1024) {
+    return file
+  }
+
+  const image = await loadImageElement(file)
+  const longestEdge = Math.max(image.naturalWidth, image.naturalHeight) || 1
+  const scale = Math.min(1, maxReferenceDimension / longestEdge)
+  const width = Math.max(1, Math.round(image.naturalWidth * scale))
+  const height = Math.max(1, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('参考图处理失败，请重试。')
+  }
+
+  context.drawImage(image, 0, 0, width, height)
+
+  const createBlob = (quality: number) => new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob)
+      else reject(new Error('参考图处理失败，请重试。'))
+    }, 'image/jpeg', quality)
+  })
+
+  let normalizedBlob = await createBlob(referenceJpegQuality)
+  if (normalizedBlob.size > referenceMaxBytes) {
+    normalizedBlob = await createBlob(0.72)
+  }
+
+  const normalizedName = file.name.replace(/\.[^.]+$/, '') || 'reference-image'
+  return new File([normalizedBlob], `${normalizedName}.jpg`, { type: 'image/jpeg' })
 }
 
 function buildWorkTitle(prompt: string, index: number) {
@@ -184,7 +244,17 @@ export function GeneratePage() {
   }, [])
 
   function handleReferenceFileChange(nextFiles: FileList | null) {
-    setReferenceFiles((current) => appendUniqueFiles(current, Array.from(nextFiles ?? [])))
+    const selectedFiles = Array.from(nextFiles ?? [])
+    const validFiles = selectedFiles.filter((file) => supportedReferenceTypes.has(file.type))
+    const invalidFiles = selectedFiles.filter((file) => !supportedReferenceTypes.has(file.type))
+
+    setReferenceFiles((current) => appendUniqueFiles(current, validFiles))
+
+    if (invalidFiles.length > 0) {
+      setError('图生图当前支持 JPG、PNG、WebP 格式。')
+    } else {
+      setError('')
+    }
   }
 
   function removeReferenceFile(file: File) {
@@ -247,7 +317,7 @@ export function GeneratePage() {
 
     try {
       const images = mode === 'image-to-image'
-        ? await Promise.all(referenceFiles.map((file) => readFileAsDataUrl(file)))
+        ? await Promise.all(referenceFiles.map(async (file) => readFileAsDataUrl(await normalizeReferenceImage(file))))
         : []
 
       const { data, error: invokeError } = await supabase.functions.invoke('generate-image', {
@@ -399,6 +469,7 @@ export function GeneratePage() {
                   ))}
                 </div>
               )}
+              <small>图生图会先自动压缩参考图，再发送生成请求，优先避免手机原图过大导致上传失败。</small>
             </>
           )}
 
