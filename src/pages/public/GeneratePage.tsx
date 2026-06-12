@@ -29,8 +29,8 @@ type GeneratedResult = {
 
 const emptyForm: GenerateForm = {
   prompt: '',
-  resolution: '1K',
-  quality: 'medium',
+  resolution: '4K',
+  quality: 'high',
   count: 1,
 }
 
@@ -59,6 +59,40 @@ function readFileAsDataUrl(file: File) {
 function buildWorkTitle(prompt: string, index: number) {
   const trimmed = prompt.trim()
   return trimmed ? `${trimmed.slice(0, 24)}${trimmed.length > 24 ? '...' : ''} #${index + 1}` : `作品 ${index + 1}`
+}
+
+function buildDownloadFileName(prompt: string, index: number) {
+  const base = prompt.trim().replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const safeBase = (base || `generated-${index + 1}`).slice(0, 40)
+  return `${safeBase}-${index + 1}.png`
+}
+
+async function extractFunctionErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'context' in error) {
+    const response = (error as { context?: unknown }).context
+    if (response instanceof Response) {
+      try {
+        const payload = await response.clone().json() as { error?: unknown; message?: unknown }
+        if (typeof payload.error === 'string' && payload.error.trim()) return payload.error
+        if (typeof payload.message === 'string' && payload.message.trim()) return payload.message
+      } catch {
+        // ignore and fall back below
+      }
+
+      try {
+        const text = (await response.clone().text()).trim()
+        if (text) return text
+      } catch {
+        // ignore and fall back below
+      }
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return fallback
 }
 
 export function GeneratePage() {
@@ -155,7 +189,7 @@ export function GeneratePage() {
           : [],
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生图失败。')
+      setError(await extractFunctionErrorMessage(err, '生图失败。'))
       setResults([])
     }
 
@@ -187,7 +221,7 @@ export function GeneratePage() {
 
       await refreshGallery()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存作品失败。')
+      setError(await extractFunctionErrorMessage(err, '保存作品失败。'))
     }
 
     setSavingIds((current) => current.filter((id) => id !== result.id))
@@ -218,7 +252,7 @@ export function GeneratePage() {
           <textarea
             value={form.prompt}
             onChange={(event) => setForm((current) => ({ ...current, prompt: event.target.value }))}
-            placeholder="输入提示词，官方支持什么就按官方能力生成。"
+            placeholder="输入你想生成的画面内容，尽量具体一点。"
             required
           />
 
@@ -294,7 +328,7 @@ export function GeneratePage() {
                 )}
                 <div>
                   <strong>{buildWorkTitle(result.prompt, index)}</strong>
-                  <span>{result.providerName || '当前供应商'} · {result.modelName || '默认模型'} · {result.resolution} · {result.quality}</span>
+                  <span>{result.providerName || '当前供应商'} / {result.modelName || '默认模型'} / {result.resolution} / {result.quality}</span>
                   {result.revisedPrompt && <p className="generated-note">模型改写提示词：{result.revisedPrompt}</p>}
                   <div className="form-actions media-card-actions">
                     <button
@@ -305,7 +339,15 @@ export function GeneratePage() {
                       {savingIds.includes(result.id) ? '保存中...' : '保存到作品集'}
                     </button>
                     {(result.imageDataUrl || result.imageUrl) && (
-                      <a href={result.imageDataUrl ?? result.imageUrl} download target="_blank" rel="noreferrer">下载图片</a>
+                      <a
+                        className="secondary-button button-link"
+                        href={result.imageDataUrl ?? result.imageUrl}
+                        download={buildDownloadFileName(result.prompt, index)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        下载图片
+                      </a>
                     )}
                   </div>
                 </div>
@@ -329,7 +371,7 @@ export function GeneratePage() {
                 <img src={item.image_url} alt={item.title} />
                 <div>
                   <strong>{item.title || '未命名作品'}</strong>
-                  <span>{item.provider_name || '公开作品'} · {item.model || '默认模型'} · {new Date(item.created_at).toLocaleString()}</span>
+                  <span>{item.provider_name || '公开作品'} / {item.model || '默认模型'} / {new Date(item.created_at).toLocaleString()}</span>
                   <p className="generated-note">{item.prompt}</p>
                   <div className="tag-list">
                     <em>{item.mode === 'text-to-image' ? '文生图' : '图生图'}</em>

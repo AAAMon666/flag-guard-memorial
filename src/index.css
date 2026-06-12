@@ -148,6 +148,7 @@ th { color: #540000; background: #fff7e6; }
 td button { padding: 8px 12px; margin-right: 6px; box-shadow: none; }
 button.danger { background: #6b1c1c; }
 .secondary-button { background: #84605a; box-shadow: none; }
+.button-link { display: inline-flex; align-items: center; justify-content: center; border-radius: 18px; padding: 12px 18px; font-weight: 700; color: #fff; }
 .admin-user-card { display: grid; gap: 10px; margin-top: 18px; padding: 14px; border-radius: 16px; background: rgba(255,255,255,.1); }
 .admin-user-card span { color: #ffe9b5; font-size: 13px; word-break: break-all; }
 .admin-user-card button { box-shadow: none; justify-content: center; }

@@ -9,7 +9,6 @@ type GenerateRequest = {
   resolution?: '1K' | '2K' | '4K'
   quality?: 'low' | 'medium' | 'high'
   count?: number
-  freeSize?: string
 }
 
 type ProviderRecord = {
@@ -24,15 +23,8 @@ type ProviderRecord = {
 const resolutionMap = {
   '1K': '1024x1024',
   '2K': '2048x2048',
-  '4K': '4096x4096',
+  '4K': '3840x2160',
 } as const
-
-function buildPrompt(prompt: string, freeSize?: string) {
-  const trimmedPrompt = prompt.trim()
-  const trimmedSize = freeSize?.trim()
-  if (!trimmedSize) return trimmedPrompt
-  return `${trimmedPrompt}\n目标尺寸：${trimmedSize}`
-}
 
 function dataUrlToFile(dataUrl: string, fallbackName: string) {
   const [meta, payload] = dataUrl.split(',', 2)
@@ -57,18 +49,21 @@ function normalizeImagesResponse(payload: Record<string, unknown>) {
   return rows.flatMap((row) => {
     if (!row || typeof row !== 'object') return []
     const imageRow = row as Record<string, unknown>
+
     if (typeof imageRow.b64_json === 'string') {
       return [{
         imageDataUrl: `data:image/png;base64,${imageRow.b64_json}`,
         revisedPrompt: typeof imageRow.revised_prompt === 'string' ? imageRow.revised_prompt : null,
       }]
     }
+
     if (typeof imageRow.url === 'string') {
       return [{
         imageUrl: imageRow.url,
         revisedPrompt: typeof imageRow.revised_prompt === 'string' ? imageRow.revised_prompt : null,
       }]
     }
+
     return []
   })
 }
@@ -84,6 +79,7 @@ async function loadActiveProvider() {
     .maybeSingle()
 
   if (error) throw error
+
   const provider = data as ProviderRecord | null
   if (!provider || !provider.api_key_ciphertext || !provider.api_key_iv) {
     throw new Error('生图服务暂未开启。')
@@ -102,8 +98,8 @@ Deno.serve(async (req) => {
     const prompt = body.prompt?.trim()
     const mode = body.mode
     const images = Array.isArray(body.images) ? body.images.filter(Boolean) : []
-    const quality = body.quality ?? 'medium'
-    const resolution = body.resolution ?? '1K'
+    const quality = body.quality ?? 'high'
+    const resolution = body.resolution ?? '4K'
     const count = Math.min(Math.max(Number(body.count ?? 1), 1), 4)
 
     if (!prompt) {
@@ -124,7 +120,6 @@ Deno.serve(async (req) => {
 
     const apiKey = await decryptProviderKey(provider.api_key_ciphertext, provider.api_key_iv, encryptionSecret)
     const apiBase = provider.api_v1_url.replace(/\/+$/, '')
-    const finalPrompt = buildPrompt(prompt, body.freeSize)
     const size = resolutionMap[resolution]
 
     let upstreamResponse: Response
@@ -138,7 +133,7 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           model: provider.model,
-          prompt: finalPrompt,
+          prompt,
           n: count,
           size,
           quality,
@@ -148,7 +143,7 @@ Deno.serve(async (req) => {
     } else {
       const formData = new FormData()
       formData.set('model', provider.model)
-      formData.set('prompt', finalPrompt)
+      formData.set('prompt', prompt)
       formData.set('n', String(count))
       formData.set('size', size)
       formData.set('quality', quality)
@@ -179,11 +174,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: message }, { status: upstreamResponse.status })
     }
 
-    const imagesResult = normalizeImagesResponse(payload as Record<string, unknown>)
     return jsonResponse({
       provider: provider.name,
       model: provider.model,
-      images: imagesResult,
+      images: normalizeImagesResponse(payload as Record<string, unknown>),
     })
   } catch (error) {
     return jsonResponse(
