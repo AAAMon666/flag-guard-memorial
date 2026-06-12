@@ -37,6 +37,89 @@ function shouldUsePromptNativeSize(prompt: string) {
   return nativeSizePromptPatterns.some((pattern) => pattern.test(prompt))
 }
 
+const promptNativeSizePatterns = [
+  /\b\d{3,5}\s*[x×]\s*\d{3,5}\b/i,
+  /\b\d+\s*:\s*\d+\b/,
+  /\b(a0|a1|a2|a3|a4|a5|a6|b4|b5)\b/i,
+  /(\u6d77\u62a5|poster|\u6a2a\u7248|\u7ad6\u7248|\u6a2a\u6784\u56fe|\u7ad6\u6784\u56fe|\u65b9\u56fe|\u957f\u56fe|\u5c3a\u5bf8|\u6bd4\u4f8b)/i,
+]
+
+function usesPromptNativeSize(prompt: string) {
+  return promptNativeSizePatterns.some((pattern) => pattern.test(prompt))
+}
+
+function getLongEdge(resolution: GenerateRequest['resolution']) {
+  switch (resolution) {
+    case '1K':
+      return 1024
+    case '2K':
+      return 2048
+    case '4K':
+    default:
+      return 3840
+  }
+}
+
+function normalizeEvenSize(value: number) {
+  return Math.max(64, Math.round(value / 2) * 2)
+}
+
+function getPromptOrientation(prompt: string) {
+  if (/(\u7ad6\u7248|\u7ad6\u5411|\u7ad6\u6784\u56fe|portrait)/i.test(prompt)) {
+    return 'portrait'
+  }
+  if (/(\u6a2a\u7248|\u6a2a\u5411|\u6a2a\u6784\u56fe|landscape)/i.test(prompt)) {
+    return 'landscape'
+  }
+  return 'landscape'
+}
+
+function buildSizeFromRatio(widthRatio: number, heightRatio: number, resolution: GenerateRequest['resolution']) {
+  const longEdge = getLongEdge(resolution)
+
+  if (widthRatio >= heightRatio) {
+    const width = longEdge
+    const height = normalizeEvenSize(longEdge * heightRatio / widthRatio)
+    return `${width}x${height}`
+  }
+
+  const height = longEdge
+  const width = normalizeEvenSize(longEdge * widthRatio / heightRatio)
+  return `${width}x${height}`
+}
+
+function getPromptNativeSize(prompt: string, resolution: GenerateRequest['resolution']) {
+  const explicitSize = prompt.match(/\b(\d{3,5})\s*[x×]\s*(\d{3,5})\b/i)
+  if (explicitSize) {
+    return `${Number(explicitSize[1])}x${Number(explicitSize[2])}`
+  }
+
+  const explicitRatio = prompt.match(/\b(\d+)\s*:\s*(\d+)\b/)
+  if (explicitRatio) {
+    return buildSizeFromRatio(Number(explicitRatio[1]), Number(explicitRatio[2]), resolution)
+  }
+
+  const hasPaperSize = /\b(a0|a1|a2|a3|a4|a5|a6|b4|b5)\b/i.test(prompt)
+  if (!hasPaperSize) return ''
+
+  const orientation = getPromptOrientation(prompt)
+  return orientation === 'portrait'
+    ? buildSizeFromRatio(1, Math.SQRT2, resolution)
+    : buildSizeFromRatio(Math.SQRT2, 1, resolution)
+}
+
+function buildProviderPrompt(prompt: string, usePromptNativeSize: boolean) {
+  if (!usePromptNativeSize) return prompt
+
+  return [
+    prompt,
+    'Full-bleed output: the entire image canvas must be the requested poster/paper/aspect-ratio artwork itself.',
+    'Do not place the poster on a larger background or mockup canvas.',
+    'No white margins, no borders, no padding, no letterboxing, no pillarboxing.',
+    'Extend the background and design elements all the way to every edge of the final image.',
+  ].join('\n')
+}
+
 function dataUrlToFile(dataUrl: string, fallbackName: string) {
   const [meta, payload] = dataUrl.split(',', 2)
   if (!meta || !payload || !meta.startsWith('data:')) {
@@ -132,21 +215,24 @@ Deno.serve(async (req) => {
     const apiKey = await decryptProviderKey(provider.api_key_ciphertext, provider.api_key_iv, encryptionSecret)
     const apiBase = provider.api_v1_url.replace(/\/+$/, '')
     const size = resolutionMap[resolution]
-    const usePromptNativeSize = shouldUsePromptNativeSize(prompt)
+    const usePromptNativeSize = usesPromptNativeSize(prompt)
+    const promptSize = getPromptNativeSize(prompt, resolution)
+    const providerPrompt = buildProviderPrompt(prompt, usePromptNativeSize)
+    const requestSize = promptSize || size
 
     let upstreamResponse: Response
 
     if (mode === 'text-to-image') {
       const requestBody: Record<string, unknown> = {
         model: provider.model,
-        prompt,
+        prompt: providerPrompt,
         n: count,
         quality,
         response_format: 'b64_json',
       }
 
-      if (!usePromptNativeSize) {
-        requestBody.size = size
+      if (!usePromptNativeSize || promptSize) {
+        requestBody.size = requestSize
       }
 
       upstreamResponse = await fetch(`${apiBase}/images/generations`, {
@@ -160,13 +246,13 @@ Deno.serve(async (req) => {
     } else {
       const formData = new FormData()
       formData.set('model', provider.model)
-      formData.set('prompt', prompt)
+      formData.set('prompt', providerPrompt)
       formData.set('n', String(count))
       formData.set('quality', quality)
       formData.set('response_format', 'b64_json')
 
-      if (!usePromptNativeSize) {
-        formData.set('size', size)
+      if (!usePromptNativeSize || promptSize) {
+        formData.set('size', requestSize)
       }
 
       images.forEach((image, index) => {
