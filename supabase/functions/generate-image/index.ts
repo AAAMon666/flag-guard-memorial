@@ -15,12 +15,6 @@ type GenerateRequest = {
   count?: number
 }
 
-type EffectiveGenerationConfig = {
-  resolution: ResolutionOption
-  quality: QualityOption
-  count: number
-}
-
 type ProviderRecord = {
   id: string
   name: string
@@ -30,135 +24,14 @@ type ProviderRecord = {
   api_key_iv: string | null
 }
 
-const resolutionMap: Record<ResolutionOption, string> = {
-  '1K': '1024x1024',
-  '2K': '2048x2048',
-  '4K': '3840x2160',
-}
-
-const promptNativeSizePatterns = [
-  /\b\d{3,5}\s*[x×]\s*\d{3,5}\b/i,
-  /\b\d+\s*:\s*\d+\b/,
-  /\b(a0|a1|a2|a3|a4|a5|a6|b4|b5)\b/i,
-  /(\u6d77\u62a5|poster|\u6a2a\u7248|\u7ad6\u7248|\u6a2a\u6784\u56fe|\u7ad6\u6784\u56fe|\u65b9\u56fe|\u957f\u56fe|\u5c3a\u5bf8|\u6bd4\u4f8b)/i,
-]
-
-function usesPromptNativeSize(prompt: string) {
-  return promptNativeSizePatterns.some((pattern) => pattern.test(prompt))
-}
-
-function getResolutionBaseSize(resolution: ResolutionOption) {
-  const rawSize = resolutionMap[resolution]
-  const [widthText, heightText] = rawSize.split('x')
-  return {
-    width: Number(widthText),
-    height: Number(heightText),
-  }
-}
-
-function normalizeStep16(value: number) {
-  return Math.max(64, Math.round(value / 16) * 16)
-}
-
-function getPromptOrientation(prompt: string) {
-  if (/(\u7ad6\u7248|\u7ad6\u5411|\u7ad6\u6784\u56fe|portrait)/i.test(prompt)) {
-    return 'portrait'
-  }
-  if (/(\u6a2a\u7248|\u6a2a\u5411|\u6a2a\u6784\u56fe|landscape)/i.test(prompt)) {
-    return 'landscape'
-  }
-  return 'landscape'
-}
-
-function buildSizeFromRatio(widthRatio: number, heightRatio: number, resolution: ResolutionOption) {
-  const baseSize = getResolutionBaseSize(resolution)
-  const pixelBudget = baseSize.width * baseSize.height
-  const ratio = widthRatio / heightRatio
-
-  let width = normalizeStep16(Math.sqrt(pixelBudget * ratio))
-  let height = normalizeStep16(width / ratio)
-
-  while (width * height > pixelBudget && width > 64 && height > 64) {
-    if (width >= height) {
-      width -= 16
-      height = normalizeStep16(width / ratio)
-    } else {
-      height -= 16
-      width = normalizeStep16(height * ratio)
-    }
+function buildProviderPrompt(prompt: string, resolution: ResolutionOption) {
+  const resolutionLabels: Record<ResolutionOption, string> = {
+    '1K': '1K 级别清晰度',
+    '2K': '2K 级别清晰度',
+    '4K': '4K 级别清晰度',
   }
 
-  return `${width}x${height}`
-}
-
-function getPromptNativeSize(prompt: string, resolution: ResolutionOption) {
-  const explicitSize = prompt.match(/\b(\d{3,5})\s*[x×]\s*(\d{3,5})\b/i)
-  if (explicitSize) {
-    const width = normalizeStep16(Number(explicitSize[1]))
-    const height = normalizeStep16(Number(explicitSize[2]))
-    return `${width}x${height}`
-  }
-
-  const explicitRatio = prompt.match(/\b(\d+)\s*:\s*(\d+)\b/)
-  if (explicitRatio) {
-    return buildSizeFromRatio(Number(explicitRatio[1]), Number(explicitRatio[2]), resolution)
-  }
-
-  const hasPaperSize = /\b(a0|a1|a2|a3|a4|a5|a6|b4|b5)\b/i.test(prompt)
-  if (!hasPaperSize) return ''
-
-  const orientation = getPromptOrientation(prompt)
-  return orientation === 'portrait'
-    ? buildSizeFromRatio(1, Math.SQRT2, resolution)
-    : buildSizeFromRatio(Math.SQRT2, 1, resolution)
-}
-
-function buildProviderPrompt(prompt: string, usePromptNativeSize: boolean) {
-  if (!usePromptNativeSize) return prompt
-
-  return [
-    prompt,
-    'Full-bleed output: the final image canvas must be the artwork itself.',
-    'Do not place the poster on a larger white background or mockup canvas.',
-    'No white margins, no borders, no padding, no letterboxing, no pillarboxing.',
-    'Extend the background and design all the way to every edge of the final image.',
-  ].join('\n')
-}
-
-function buildFallbackConfig(config: EffectiveGenerationConfig) {
-  if (config.resolution === '4K') {
-    return {
-      resolution: '2K',
-      quality: config.quality === 'high' ? 'medium' : config.quality,
-      count: 1,
-    } satisfies EffectiveGenerationConfig
-  }
-
-  if (config.quality === 'high') {
-    return {
-      resolution: config.resolution,
-      quality: 'medium',
-      count: 1,
-    } satisfies EffectiveGenerationConfig
-  }
-
-  if (config.quality === 'medium') {
-    return {
-      resolution: config.resolution,
-      quality: 'low',
-      count: 1,
-    } satisfies EffectiveGenerationConfig
-  }
-
-  if (config.count > 1) {
-    return {
-      resolution: config.resolution,
-      quality: config.quality,
-      count: 1,
-    } satisfies EffectiveGenerationConfig
-  }
-
-  return null
+  return `${prompt}\n\n输出清晰度倾向：${resolutionLabels[resolution]}。`
 }
 
 function dataUrlToFile(dataUrl: string, fallbackName: string) {
@@ -235,7 +108,6 @@ Deno.serve(async (req) => {
     const images = Array.isArray(body.images) ? body.images.filter(Boolean) : []
     const quality: QualityOption = body.quality ?? 'high'
     const resolution: ResolutionOption = body.resolution ?? '4K'
-    const count = Math.min(Math.max(Number(body.count ?? 1), 1), 4)
 
     if (!prompt) {
       return jsonResponse({ error: '请输入提示词。' }, { status: 400 })
@@ -255,25 +127,15 @@ Deno.serve(async (req) => {
 
     const apiKey = await decryptProviderKey(provider.api_key_ciphertext, provider.api_key_iv, encryptionSecret)
     const apiBase = provider.api_v1_url.replace(/\/+$/, '')
-    const usePromptNativeSize = usesPromptNativeSize(prompt)
-    const providerPrompt = buildProviderPrompt(prompt, usePromptNativeSize)
+    const providerPrompt = buildProviderPrompt(prompt, resolution)
 
-    async function requestProvider(config: EffectiveGenerationConfig) {
-      const size = resolutionMap[config.resolution]
-      const promptSize = getPromptNativeSize(prompt, config.resolution)
-      const requestSize = promptSize || size
-
+    async function requestProvider() {
       if (mode === 'text-to-image') {
         const requestBody: Record<string, unknown> = {
           model: provider.model,
           prompt: providerPrompt,
-          n: config.count,
-          quality: config.quality,
+          quality,
           response_format: 'url',
-        }
-
-        if (!usePromptNativeSize || promptSize) {
-          requestBody.size = requestSize
         }
 
         return await fetch(`${apiBase}/images/generations`, {
@@ -290,13 +152,8 @@ Deno.serve(async (req) => {
       const formData = new FormData()
       formData.set('model', provider.model)
       formData.set('prompt', providerPrompt)
-      formData.set('n', String(config.count))
-      formData.set('quality', config.quality)
+      formData.set('quality', quality)
       formData.set('response_format', 'url')
-
-      if (!usePromptNativeSize || promptSize) {
-        formData.set('size', requestSize)
-      }
 
       images.forEach((image, index) => {
         const file = dataUrlToFile(image, `reference-${index + 1}`)
@@ -314,29 +171,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    const requestedConfig: EffectiveGenerationConfig = { resolution, quality, count }
-    const fallbackConfig = buildFallbackConfig(requestedConfig)
-
-    let effectiveConfig = requestedConfig
-    let upstreamResponse: Response
-
-    try {
-      upstreamResponse = await requestProvider(requestedConfig)
-    } catch (error) {
-      if (!fallbackConfig || !(error instanceof Error) || error.name !== 'TimeoutError') {
-        throw error
-      }
-
-      effectiveConfig = fallbackConfig
-      upstreamResponse = await requestProvider(fallbackConfig)
-    }
-
+    const upstreamResponse = await requestProvider()
     let payload = await upstreamResponse.json().catch(() => ({}))
-    if (!upstreamResponse.ok && fallbackConfig && effectiveConfig === requestedConfig) {
-      effectiveConfig = fallbackConfig
-      upstreamResponse = await requestProvider(fallbackConfig)
-      payload = await upstreamResponse.json().catch(() => ({}))
-    }
 
     if (!upstreamResponse.ok) {
       const message = typeof payload?.error?.message === 'string'
@@ -350,9 +186,9 @@ Deno.serve(async (req) => {
     return jsonResponse({
       provider: provider.name,
       model: provider.model,
-      usedResolution: effectiveConfig.resolution,
-      usedQuality: effectiveConfig.quality,
-      usedCount: effectiveConfig.count,
+      usedResolution: resolution,
+      usedQuality: quality,
+      usedCount: 1,
       images: normalizeImagesResponse(payload as Record<string, unknown>),
     })
   } catch (error) {

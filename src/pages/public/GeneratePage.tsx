@@ -135,6 +135,13 @@ function buildDownloadFileName(name: string, index = 0) {
   return `${safeBase}-${index + 1}.png`
 }
 
+function formatElapsed(seconds: number) {
+  const safeSeconds = Math.max(0, seconds)
+  const minutes = Math.floor(safeSeconds / 60)
+  const remainingSeconds = safeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
 async function extractFunctionErrorMessage(error: unknown, fallback: string) {
   if (error && typeof error === 'object' && 'context' in error) {
     const response = (error as { context?: unknown }).context
@@ -211,8 +218,27 @@ export function GeneratePage() {
   const [downloadingName, setDownloadingName] = useState('')
   const [previewItem, setPreviewItem] = useState<PreviewItem | null>(null)
   const [error, setError] = useState('')
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null)
+  const [generationElapsedSeconds, setGenerationElapsedSeconds] = useState(0)
 
   const countOptions = useMemo(() => [1, 2, 3, 4], [])
+  const resultStatusText = generating
+    ? `已用时 ${formatElapsed(generationElapsedSeconds)}`
+    : results.length
+      ? `${results.length} 张${generationElapsedSeconds > 0 ? ` · 用时 ${formatElapsed(generationElapsedSeconds)}` : ''}`
+      : '未生成'
+
+  useEffect(() => {
+    if (!generationStartedAt) return
+
+    const updateElapsed = () => {
+      setGenerationElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000))
+    }
+
+    updateElapsed()
+    const timer = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(timer)
+  }, [generationStartedAt])
 
   useEffect(() => {
     if (!previewItem) return
@@ -314,55 +340,67 @@ export function GeneratePage() {
 
     setGenerating(true)
     setError('')
+    setResults([])
+    const startedAt = Date.now()
+    setGenerationStartedAt(startedAt)
+    setGenerationElapsedSeconds(0)
 
     try {
       const images = mode === 'image-to-image'
         ? await Promise.all(referenceFiles.map(async (file) => readFileAsDataUrl(await normalizeReferenceImage(file))))
         : []
+      const nextResults: GeneratedResult[] = []
 
-      const { data, error: invokeError } = await supabase.functions.invoke('generate-image', {
-        body: {
-          mode,
-          prompt: form.prompt,
-          images,
-          resolution: form.resolution,
-          quality: form.quality,
-          count: form.count,
-        },
-      })
+      for (let requestIndex = 0; requestIndex < form.count; requestIndex += 1) {
+        const { data, error: invokeError } = await supabase.functions.invoke('generate-image', {
+          body: {
+            mode,
+            prompt: form.prompt,
+            images,
+            resolution: form.resolution,
+            quality: form.quality,
+            count: 1,
+          },
+        })
 
-      if (invokeError) throw invokeError
-      if (data?.error) throw new Error(data.error)
+        if (invokeError) throw invokeError
+        if (data?.error) throw new Error(data.error)
 
-      const nextProviderName = typeof data?.provider === 'string' ? data.provider : ''
-      const nextModelName = typeof data?.model === 'string' ? data.model : ''
-      const usedResolution = data?.usedResolution === '1K' || data?.usedResolution === '2K' || data?.usedResolution === '4K'
-        ? data.usedResolution
-        : form.resolution
-      const usedQuality = data?.usedQuality === 'low' || data?.usedQuality === 'medium' || data?.usedQuality === 'high'
-        ? data.usedQuality
-        : form.quality
+        const nextProviderName = typeof data?.provider === 'string' ? data.provider : ''
+        const nextModelName = typeof data?.model === 'string' ? data.model : ''
+        const usedResolution = data?.usedResolution === '1K' || data?.usedResolution === '2K' || data?.usedResolution === '4K'
+          ? data.usedResolution
+          : form.resolution
+        const usedQuality = data?.usedQuality === 'low' || data?.usedQuality === 'medium' || data?.usedQuality === 'high'
+          ? data.usedQuality
+          : form.quality
+        const generatedImages = Array.isArray(data?.images) ? data.images : []
 
-      setResults(
-        Array.isArray(data?.images)
-          ? data.images.map((item: GeneratedResult, index: number) => ({
-              id: `${Date.now()}-${index}`,
-              imageDataUrl: item.imageDataUrl,
-              imageUrl: item.imageUrl,
-              revisedPrompt: item.revisedPrompt ?? null,
-              prompt: form.prompt,
-              resolution: usedResolution,
-              quality: usedQuality,
-              mode,
-              providerName: nextProviderName,
-              modelName: nextModelName,
-            }))
-          : [],
-      )
+        if (generatedImages.length === 0) {
+          throw new Error('本次生成未返回图片。')
+        }
+
+        nextResults.push(
+          ...generatedImages.map((item: GeneratedResult, itemIndex: number) => ({
+            id: `${startedAt}-${requestIndex}-${itemIndex}`,
+            imageDataUrl: item.imageDataUrl,
+            imageUrl: item.imageUrl,
+            revisedPrompt: item.revisedPrompt ?? null,
+            prompt: form.prompt,
+            resolution: usedResolution,
+            quality: usedQuality,
+            mode,
+            providerName: nextProviderName,
+            modelName: nextModelName,
+          })),
+        )
+        setResults([...nextResults])
+      }
     } catch (err) {
       setError(await extractFunctionErrorMessage(err, '生图失败。'))
-      setResults([])
     } finally {
+      setGenerationStartedAt(null)
+      setGenerationElapsedSeconds(Math.ceil((Date.now() - startedAt) / 1000))
       setGenerating(false)
     }
   }
@@ -427,7 +465,7 @@ export function GeneratePage() {
             placeholder="输入你想生成的画面内容，尽量具体一点。"
             required
           />
-          <small>提示词里写 A3、16:9、竖版、海报这类明确尺寸或比例信息时，会优先按提示词处理，不再强制套用固定画布比例。</small>
+          <small>尺寸、比例、A3、竖版、海报等要求直接写进提示词。系统不会额外强制画布尺寸。</small>
 
           <div className="generate-options">
             <label>
@@ -481,7 +519,7 @@ export function GeneratePage() {
           )}
 
           <div className="form-actions">
-            <button disabled={generating || !hasSupabaseConfig}>{generating ? '生成中...' : '开始生成'}</button>
+            <button disabled={generating || !hasSupabaseConfig}>{generating ? `生成中... 已用时 ${formatElapsed(generationElapsedSeconds)}` : '开始生成'}</button>
           </div>
         </form>
       </section>
@@ -489,7 +527,7 @@ export function GeneratePage() {
       <section className="section-card">
         <div className="section-title">
           <h2>本次生成结果</h2>
-          <span>{results.length ? `${results.length} 张` : '未生成'}</span>
+          <span>{resultStatusText}</span>
         </div>
         {results.length ? (
           <div className="media-grid generated-grid">
