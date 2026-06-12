@@ -2,13 +2,23 @@ import { corsHeaders, jsonResponse } from '../_shared/cors.ts'
 import { createServiceClient } from '../_shared/providerAccess.ts'
 import { decryptProviderKey } from '../_shared/providerCrypto.ts'
 
+type ResolutionOption = '1K' | '2K' | '4K'
+type QualityOption = 'low' | 'medium' | 'high'
+type GenerateMode = 'text-to-image' | 'image-to-image'
+
 type GenerateRequest = {
-  mode: 'text-to-image' | 'image-to-image'
+  mode: GenerateMode
   prompt: string
   images?: string[]
-  resolution?: '1K' | '2K' | '4K'
-  quality?: 'low' | 'medium' | 'high'
+  resolution?: ResolutionOption
+  quality?: QualityOption
   count?: number
+}
+
+type EffectiveGenerationConfig = {
+  resolution: ResolutionOption
+  quality: QualityOption
+  count: number
 }
 
 type ProviderRecord = {
@@ -20,21 +30,10 @@ type ProviderRecord = {
   api_key_iv: string | null
 }
 
-const resolutionMap = {
+const resolutionMap: Record<ResolutionOption, string> = {
   '1K': '1024x1024',
   '2K': '2048x2048',
   '4K': '3840x2160',
-} as const
-
-const nativeSizePromptPatterns = [
-  /\b\d{3,5}\s*[x×]\s*\d{3,5}\b/i,
-  /\b\d+\s*:\s*\d+\b/,
-  /\b(a0|a1|a2|a3|a4|a5|a6|b4|b5)\b/i,
-  /(海报|poster|横版|竖版|横构图|竖构图|方图|长图|尺寸|比例)/i,
-]
-
-function shouldUsePromptNativeSize(prompt: string) {
-  return nativeSizePromptPatterns.some((pattern) => pattern.test(prompt))
 }
 
 const promptNativeSizePatterns = [
@@ -48,8 +47,8 @@ function usesPromptNativeSize(prompt: string) {
   return promptNativeSizePatterns.some((pattern) => pattern.test(prompt))
 }
 
-function getResolutionBaseSize(resolution: GenerateRequest['resolution']) {
-  const rawSize = resolutionMap[resolution ?? '4K']
+function getResolutionBaseSize(resolution: ResolutionOption) {
+  const rawSize = resolutionMap[resolution]
   const [widthText, heightText] = rawSize.split('x')
   return {
     width: Number(widthText),
@@ -57,7 +56,7 @@ function getResolutionBaseSize(resolution: GenerateRequest['resolution']) {
   }
 }
 
-function normalizeEvenSize(value: number) {
+function normalizeStep16(value: number) {
   return Math.max(64, Math.round(value / 16) * 16)
 }
 
@@ -71,31 +70,33 @@ function getPromptOrientation(prompt: string) {
   return 'landscape'
 }
 
-function buildSizeFromRatio(widthRatio: number, heightRatio: number, resolution: GenerateRequest['resolution']) {
+function buildSizeFromRatio(widthRatio: number, heightRatio: number, resolution: ResolutionOption) {
   const baseSize = getResolutionBaseSize(resolution)
   const pixelBudget = baseSize.width * baseSize.height
   const ratio = widthRatio / heightRatio
 
-  let width = normalizeEvenSize(Math.sqrt(pixelBudget * ratio))
-  let height = normalizeEvenSize(width / ratio)
+  let width = normalizeStep16(Math.sqrt(pixelBudget * ratio))
+  let height = normalizeStep16(width / ratio)
 
   while (width * height > pixelBudget && width > 64 && height > 64) {
     if (width >= height) {
       width -= 16
-      height = normalizeEvenSize(width / ratio)
+      height = normalizeStep16(width / ratio)
     } else {
       height -= 16
-      width = normalizeEvenSize(height * ratio)
+      width = normalizeStep16(height * ratio)
     }
   }
 
   return `${width}x${height}`
 }
 
-function getPromptNativeSize(prompt: string, resolution: GenerateRequest['resolution']) {
+function getPromptNativeSize(prompt: string, resolution: ResolutionOption) {
   const explicitSize = prompt.match(/\b(\d{3,5})\s*[x×]\s*(\d{3,5})\b/i)
   if (explicitSize) {
-    return `${Number(explicitSize[1])}x${Number(explicitSize[2])}`
+    const width = normalizeStep16(Number(explicitSize[1]))
+    const height = normalizeStep16(Number(explicitSize[2]))
+    return `${width}x${height}`
   }
 
   const explicitRatio = prompt.match(/\b(\d+)\s*:\s*(\d+)\b/)
@@ -117,17 +118,53 @@ function buildProviderPrompt(prompt: string, usePromptNativeSize: boolean) {
 
   return [
     prompt,
-    'Full-bleed output: the entire image canvas must be the requested poster/paper/aspect-ratio artwork itself.',
-    'Do not place the poster on a larger background or mockup canvas.',
+    'Full-bleed output: the final image canvas must be the artwork itself.',
+    'Do not place the poster on a larger white background or mockup canvas.',
     'No white margins, no borders, no padding, no letterboxing, no pillarboxing.',
-    'Extend the background and design elements all the way to every edge of the final image.',
+    'Extend the background and design all the way to every edge of the final image.',
   ].join('\n')
+}
+
+function buildFallbackConfig(config: EffectiveGenerationConfig) {
+  if (config.resolution === '4K') {
+    return {
+      resolution: '2K',
+      quality: config.quality === 'high' ? 'medium' : config.quality,
+      count: 1,
+    } satisfies EffectiveGenerationConfig
+  }
+
+  if (config.quality === 'high') {
+    return {
+      resolution: config.resolution,
+      quality: 'medium',
+      count: 1,
+    } satisfies EffectiveGenerationConfig
+  }
+
+  if (config.quality === 'medium') {
+    return {
+      resolution: config.resolution,
+      quality: 'low',
+      count: 1,
+    } satisfies EffectiveGenerationConfig
+  }
+
+  if (config.count > 1) {
+    return {
+      resolution: config.resolution,
+      quality: config.quality,
+      count: 1,
+    } satisfies EffectiveGenerationConfig
+  }
+
+  return null
 }
 
 function dataUrlToFile(dataUrl: string, fallbackName: string) {
   const [meta, payload] = dataUrl.split(',', 2)
   if (!meta || !payload || !meta.startsWith('data:')) {
-    throw new Error('参考图格式不正确。')
+    throw new Error('Invalid reference image data.')
   }
 
   const mimeType = meta.match(/^data:([^;]+)/)?.[1] ?? 'image/png'
@@ -180,7 +217,7 @@ async function loadActiveProvider() {
 
   const provider = data as ProviderRecord | null
   if (!provider || !provider.api_key_ciphertext || !provider.api_key_iv) {
-    throw new Error('生图服务暂未开启。')
+    throw new Error('Image generation service is not enabled.')
   }
 
   return provider
@@ -196,8 +233,8 @@ Deno.serve(async (req) => {
     const prompt = body.prompt?.trim()
     const mode = body.mode
     const images = Array.isArray(body.images) ? body.images.filter(Boolean) : []
-    const quality = body.quality ?? 'high'
-    const resolution = body.resolution ?? '4K'
+    const quality: QualityOption = body.quality ?? 'high'
+    const resolution: ResolutionOption = body.resolution ?? '4K'
     const count = Math.min(Math.max(Number(body.count ?? 1), 1), 4)
 
     if (!prompt) {
@@ -213,46 +250,48 @@ Deno.serve(async (req) => {
     const provider = await loadActiveProvider()
     const encryptionSecret = Deno.env.get('IMAGE_PROVIDER_KEY_SECRET')
     if (!encryptionSecret) {
-      throw new Error('生图服务未完成密钥配置。')
+      throw new Error('Image generation key secret is not configured.')
     }
 
     const apiKey = await decryptProviderKey(provider.api_key_ciphertext, provider.api_key_iv, encryptionSecret)
     const apiBase = provider.api_v1_url.replace(/\/+$/, '')
-    const size = resolutionMap[resolution]
     const usePromptNativeSize = usesPromptNativeSize(prompt)
-    const promptSize = getPromptNativeSize(prompt, resolution)
     const providerPrompt = buildProviderPrompt(prompt, usePromptNativeSize)
-    const requestSize = promptSize || size
 
-    let upstreamResponse: Response
+    async function requestProvider(config: EffectiveGenerationConfig) {
+      const size = resolutionMap[config.resolution]
+      const promptSize = getPromptNativeSize(prompt, config.resolution)
+      const requestSize = promptSize || size
 
-    if (mode === 'text-to-image') {
-      const requestBody: Record<string, unknown> = {
-        model: provider.model,
-        prompt: providerPrompt,
-        n: count,
-        quality,
-        response_format: 'url',
+      if (mode === 'text-to-image') {
+        const requestBody: Record<string, unknown> = {
+          model: provider.model,
+          prompt: providerPrompt,
+          n: config.count,
+          quality: config.quality,
+          response_format: 'url',
+        }
+
+        if (!usePromptNativeSize || promptSize) {
+          requestBody.size = requestSize
+        }
+
+        return await fetch(`${apiBase}/images/generations`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(110_000),
+        })
       }
 
-      if (!usePromptNativeSize || promptSize) {
-        requestBody.size = requestSize
-      }
-
-      upstreamResponse = await fetch(`${apiBase}/images/generations`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      })
-    } else {
       const formData = new FormData()
       formData.set('model', provider.model)
       formData.set('prompt', providerPrompt)
-      formData.set('n', String(count))
-      formData.set('quality', quality)
+      formData.set('n', String(config.count))
+      formData.set('quality', config.quality)
       formData.set('response_format', 'url')
 
       if (!usePromptNativeSize || promptSize) {
@@ -265,28 +304,55 @@ Deno.serve(async (req) => {
         else formData.append('image[]', file)
       })
 
-      upstreamResponse = await fetch(`${apiBase}/images/edits`, {
+      return await fetch(`${apiBase}/images/edits`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
         body: formData,
+        signal: AbortSignal.timeout(110_000),
       })
     }
 
-    const payload = await upstreamResponse.json().catch(() => ({}))
+    const requestedConfig: EffectiveGenerationConfig = { resolution, quality, count }
+    const fallbackConfig = buildFallbackConfig(requestedConfig)
+
+    let effectiveConfig = requestedConfig
+    let upstreamResponse: Response
+
+    try {
+      upstreamResponse = await requestProvider(requestedConfig)
+    } catch (error) {
+      if (!fallbackConfig || !(error instanceof Error) || error.name !== 'TimeoutError') {
+        throw error
+      }
+
+      effectiveConfig = fallbackConfig
+      upstreamResponse = await requestProvider(fallbackConfig)
+    }
+
+    let payload = await upstreamResponse.json().catch(() => ({}))
+    if (!upstreamResponse.ok && fallbackConfig && effectiveConfig === requestedConfig) {
+      effectiveConfig = fallbackConfig
+      upstreamResponse = await requestProvider(fallbackConfig)
+      payload = await upstreamResponse.json().catch(() => ({}))
+    }
+
     if (!upstreamResponse.ok) {
       const message = typeof payload?.error?.message === 'string'
         ? payload.error.message
         : typeof payload?.message === 'string'
           ? payload.message
-          : '生图请求失败。'
+          : '生成请求失败。'
       return jsonResponse({ error: message }, { status: upstreamResponse.status })
     }
 
     return jsonResponse({
       provider: provider.name,
       model: provider.model,
+      usedResolution: effectiveConfig.resolution,
+      usedQuality: effectiveConfig.quality,
+      usedCount: effectiveConfig.count,
       images: normalizeImagesResponse(payload as Record<string, unknown>),
     })
   } catch (error) {
