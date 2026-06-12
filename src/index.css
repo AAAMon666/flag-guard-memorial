@@ -113,6 +113,10 @@ textarea { min-height: 150px; resize: vertical; }
 .form-card label { display: flex; align-items: center; gap: 8px; color: #5d3330; }
 .form-card input[type="checkbox"] { width: auto; }
 .form-card { display: grid; gap: 14px; }
+.selected-file-list { grid-column: 1 / -1; display: grid; gap: 8px; padding: 12px; border: 1px solid #ecd9ad; border-radius: 14px; background: #fff7e6; color: #5d3330; }
+.selected-file-list strong { color: #540000; }
+.selected-file-list span { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #fff; word-break: break-all; }
+.selected-file-list button { flex: 0 0 auto; padding: 6px 10px; }
 .status-warn { color: #9b1c1c; }
 .status-ok { color: #157347; }
 

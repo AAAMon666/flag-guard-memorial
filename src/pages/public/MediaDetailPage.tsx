@@ -24,6 +24,16 @@ const emptyEditForm: EditForm = {
   nextPassword: '',
 }
 
+function fileKey(file: File) {
+  return `${file.name}-${file.size}-${file.lastModified}`
+}
+
+function appendUniqueFiles(currentFiles: File[], nextFiles: File[]) {
+  const filesByKey = new Map(currentFiles.map((file) => [fileKey(file), file]))
+  nextFiles.forEach((file) => filesByKey.set(fileKey(file), file))
+  return Array.from(filesByKey.values())
+}
+
 export function MediaDetailPage() {
   const { id } = useParams()
   const [media, setMedia] = useState<PublicMedia | null>(null)
@@ -70,6 +80,14 @@ export function MediaDetailPage() {
     setEditing(false)
     setPendingAssetFiles([])
     setEditForm(emptyEditForm)
+  }
+
+  function handlePendingAssetFileChange(nextFiles: FileList | null) {
+    setPendingAssetFiles((current) => appendUniqueFiles(current, Array.from(nextFiles ?? [])))
+  }
+
+  function removePendingAssetFile(file: File) {
+    setPendingAssetFiles((current) => current.filter((item) => fileKey(item) !== fileKey(file)))
   }
 
   async function uploadAsset(file: File) {
@@ -233,8 +251,18 @@ export function MediaDetailPage() {
           <label><input type="checkbox" checked={editForm.isPublic} onChange={(event) => setEditForm((current) => ({ ...current, isPublic: event.target.checked }))} /> 公开显示</label>
           <input value={editForm.password} onChange={(event) => setEditForm((current) => ({ ...current, password: event.target.value }))} type="password" placeholder="当前编辑密码（未设置可留空）" />
           <input value={editForm.nextPassword} onChange={(event) => setEditForm((current) => ({ ...current, nextPassword: event.target.value }))} type="password" placeholder="修改为新编辑密码（可选）" />
-          {media.type === 'image' && <input type="file" multiple accept="image/*" onChange={(event) => setPendingAssetFiles(Array.from(event.target.files ?? []))} />}
-          {pendingAssetFiles.length > 0 && <small>待追加 {pendingAssetFiles.length} 张图片。</small>}
+          {media.type === 'image' && <input type="file" multiple accept="image/*" onChange={(event) => { handlePendingAssetFileChange(event.target.files); event.currentTarget.value = '' }} />}
+          {pendingAssetFiles.length > 0 && (
+            <div className="selected-file-list">
+              <strong>待追加 {pendingAssetFiles.length} 张图片</strong>
+              {pendingAssetFiles.map((file) => (
+                <span key={fileKey(file)}>
+                  {file.name}
+                  <button type="button" className="secondary-button" onClick={() => removePendingAssetFile(file)}>移除</button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="form-actions"><button type="button" disabled={saving} onClick={() => saveEdit(media)}>{saving ? '保存中...' : '保存修改'}</button></div>
         </section>
       )}

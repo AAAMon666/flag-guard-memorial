@@ -27,6 +27,16 @@ const emptyUploadForm: UploadForm = {
   editPassword: '',
 }
 
+function fileKey(file: File) {
+  return `${file.name}-${file.size}-${file.lastModified}`
+}
+
+function appendUniqueFiles(currentFiles: File[], nextFiles: File[]) {
+  const filesByKey = new Map(currentFiles.map((file) => [fileKey(file), file]))
+  nextFiles.forEach((file) => filesByKey.set(fileKey(file), file))
+  return Array.from(filesByKey.values())
+}
+
 export function MediaPage() {
   const [type, setType] = useState('all')
   const [generationId, setGenerationId] = useState('')
@@ -76,11 +86,17 @@ export function MediaPage() {
   }, [])
 
   function handleFileChange(nextFiles: FileList | null) {
-    const normalizedFiles = Array.from(nextFiles ?? [])
+    const selectedFiles = Array.from(nextFiles ?? [])
+    const normalizedFiles = form.type === 'image' ? appendUniqueFiles(files, selectedFiles) : selectedFiles.slice(0, 1)
     setFiles(normalizedFiles)
     const oversized = normalizedFiles.find((file) => file.size > fileLimit)
     if (oversized) setError(`${form.type === 'image' ? '图片' : '视频'}文件过大，当前最多支持${form.type === 'image' ? '10MB' : '100MB'}。`)
     else setError('')
+  }
+
+  function removeSelectedFile(file: File) {
+    setFiles((current) => current.filter((item) => fileKey(item) !== fileKey(file)))
+    setError('')
   }
 
   async function uploadAsset(file: File, folder: string) {
@@ -185,8 +201,19 @@ export function MediaPage() {
           <input value={form.uploaderName} onChange={(event) => setForm((current) => ({ ...current, uploaderName: event.target.value }))} placeholder="上传者姓名" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input value={form.takenDate} onChange={(event) => setForm((current) => ({ ...current, takenDate: event.target.value }))} type="date" placeholder="日期" disabled={!hasSupabaseConfig || !uploadEnabled} />
           <input value={form.editPassword} onChange={(event) => setForm((current) => ({ ...current, editPassword: event.target.value }))} type="password" placeholder="设置编辑密码（可留空）" disabled={!hasSupabaseConfig || !uploadEnabled} />
-          <input type="file" multiple={form.type === 'image'} accept={form.type === 'image' ? 'image/*' : 'video/*'} onChange={(event) => handleFileChange(event.target.files)} disabled={!hasSupabaseConfig || !uploadEnabled} required />
-          <small>{form.type === 'image' ? '可一次选择多张图片；设置编辑密码后，后续修改需要输入该密码；不设置则允许所有人修改。' : '视频仍保持单条上传；设置编辑密码后，后续修改需要输入该密码；不设置则允许所有人修改。'}</small>
+          <input type="file" multiple={form.type === 'image'} accept={form.type === 'image' ? 'image/*' : 'video/*'} onChange={(event) => { handleFileChange(event.target.files); event.currentTarget.value = '' }} disabled={!hasSupabaseConfig || !uploadEnabled} required={!files.length} />
+          {files.length > 0 && (
+            <div className="selected-file-list">
+              <strong>待上传 {files.length} 个文件</strong>
+              {files.map((file) => (
+                <span key={fileKey(file)}>
+                  {file.name}
+                  <button type="button" className="secondary-button" onClick={() => removeSelectedFile(file)}>移除</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <small>{form.type === 'image' ? '可分多次选择照片，系统会累加到同一批待上传列表；设置编辑密码后，后续修改需要输入该密码；不设置则允许所有人修改。' : '视频仍保持单条上传；设置编辑密码后，后续修改需要输入该密码；不设置则允许所有人修改。'}</small>
           <div className="form-actions"><button disabled={!hasSupabaseConfig || !uploadEnabled || uploading}>{uploading ? '上传中...' : '上传并发布'}</button></div>
         </form>
       </section>
