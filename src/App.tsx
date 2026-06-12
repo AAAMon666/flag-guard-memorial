@@ -13,6 +13,7 @@ import { MessagesPage } from './pages/public/MessagesPage'
 import { GeneratePage } from './pages/public/GeneratePage'
 import { LoginPage } from './pages/public/LoginPage'
 import { AdminImageProvidersPage } from './pages/admin/AdminImageProvidersPage'
+import { AdminGeneratedGalleryPage } from './pages/admin/AdminGeneratedGalleryPage'
 import { hasSupabaseConfig } from './lib/supabase'
 import { useAuth } from './lib/AuthContext'
 import {
@@ -53,6 +54,7 @@ const router = createHashRouter([
           { path: 'taxonomy', element: <AdminTaxonomyPage /> },
           { path: 'tags', element: <AdminTagsPage /> },
           { path: 'media', element: <AdminMediaPage /> },
+          { path: 'generated-gallery', element: <AdminGeneratedGalleryPage /> },
           { path: 'image-providers', element: <AdminImageProvidersPage /> },
           { path: 'messages', element: <AdminMessagesPage /> },
           { path: 'permissions', element: <AdminPermissionsPage /> },
@@ -68,7 +70,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const { loading, session } = useAuth()
 
   if (!hasSupabaseConfig) return <Navigate to="/login" replace />
-  if (loading) return <div className="page-stack narrow"><section className="section-card">正在检查登录状态...</section></div>
+  if (loading) return <div className="page-stack narrow"><section className="section-card">姝ｅ湪妫€鏌ョ櫥褰曠姸鎬?..</section></div>
   if (!session) return <Navigate to="/login" replace />
 
   return children
