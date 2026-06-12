@@ -63,7 +63,7 @@ async function deleteItem(id: string) {
 
   if (error) throw error
   if (!data) {
-    throw new Error('浣滃搧涓嶅瓨鍦ㄦ垨宸插垹闄ゃ€?)
+    throw new Error('作品不存在或已删除。')
   }
 
   const storagePath = extractStoragePath(data.image_url)
@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
   try {
     const authorization = req.headers.get('Authorization')
     if (!authorization) {
-      return jsonResponse({ error: '缂哄皯鐧诲綍淇℃伅銆? }, { status: 401 })
+      return jsonResponse({ error: '缺少登录信息。' }, { status: 401 })
     }
 
     await requireAdminAccess(authorization)
@@ -96,17 +96,17 @@ Deno.serve(async (req) => {
 
     if (body.action === 'delete') {
       if (!body.id?.trim()) {
-        return jsonResponse({ error: '缂哄皯浣滃搧 ID銆? }, { status: 400 })
+        return jsonResponse({ error: '缺少作品 ID。' }, { status: 400 })
       }
 
       await deleteItem(body.id)
       return jsonResponse({ items: await listItems() })
     }
 
-    return jsonResponse({ error: '涓嶆敮鎸佺殑鎿嶄綔銆? }, { status: 400 })
+    return jsonResponse({ error: '不支持的操作。' }, { status: 400 })
   } catch (error) {
     return jsonResponse(
-      { error: error instanceof Error ? error.message : '浣滃搧闆嗘搷浣滃け璐ャ€? },
+      { error: error instanceof Error ? error.message : '作品集操作失败。' },
       { status: 500 },
     )
   }
