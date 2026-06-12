@@ -216,6 +216,8 @@ button.danger { background: #6b1c1c; }
 .admin-user-card { display: grid; gap: 10px; margin-top: 18px; padding: 14px; border-radius: 16px; background: rgba(255,255,255,.1); }
 .admin-user-card span { color: #ffe9b5; font-size: 13px; word-break: break-all; }
 .admin-user-card button { box-shadow: none; justify-content: center; }
+.admin-generated-thumb { width: 88px; height: 88px; object-fit: cover; border-radius: 10px; border: 1px solid rgba(84, 0, 0, 0.12); display: block; }
+.admin-generated-prompt { min-width: 240px; max-width: 420px; white-space: normal; line-height: 1.6; }
 .generation-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .generation-form textarea, .generation-form .form-actions, .generation-form .file-field { grid-column: 1 / -1; }
 .file-field { display: grid; gap: 8px; color: #7a5a4f; font-weight: 700; }
