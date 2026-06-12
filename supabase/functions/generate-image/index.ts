@@ -48,15 +48,12 @@ function usesPromptNativeSize(prompt: string) {
   return promptNativeSizePatterns.some((pattern) => pattern.test(prompt))
 }
 
-function getLongEdge(resolution: GenerateRequest['resolution']) {
-  switch (resolution) {
-    case '1K':
-      return 1024
-    case '2K':
-      return 2048
-    case '4K':
-    default:
-      return 3840
+function getResolutionBaseSize(resolution: GenerateRequest['resolution']) {
+  const rawSize = resolutionMap[resolution ?? '4K']
+  const [widthText, heightText] = rawSize.split('x')
+  return {
+    width: Number(widthText),
+    height: Number(heightText),
   }
 }
 
@@ -75,16 +72,23 @@ function getPromptOrientation(prompt: string) {
 }
 
 function buildSizeFromRatio(widthRatio: number, heightRatio: number, resolution: GenerateRequest['resolution']) {
-  const longEdge = getLongEdge(resolution)
+  const baseSize = getResolutionBaseSize(resolution)
+  const pixelBudget = baseSize.width * baseSize.height
+  const ratio = widthRatio / heightRatio
 
-  if (widthRatio >= heightRatio) {
-    const width = longEdge
-    const height = normalizeEvenSize(longEdge * heightRatio / widthRatio)
-    return `${width}x${height}`
+  let width = normalizeEvenSize(Math.sqrt(pixelBudget * ratio))
+  let height = normalizeEvenSize(width / ratio)
+
+  while (width * height > pixelBudget && width > 64 && height > 64) {
+    if (width >= height) {
+      width -= 16
+      height = normalizeEvenSize(width / ratio)
+    } else {
+      height -= 16
+      width = normalizeEvenSize(height * ratio)
+    }
   }
 
-  const height = longEdge
-  const width = normalizeEvenSize(longEdge * widthRatio / heightRatio)
   return `${width}x${height}`
 }
 
