@@ -14,8 +14,9 @@ type ClassRecord = { id: string; college_id: string; major_id: string | null; na
 type MemberRecord = { id: string; name: string; college_id: string | null; major_id: string | null; class_id: string | null; phone: string | null; gender: string; retired_status: boolean; avatar: string | null; bio: string }
 type TagRecord = { id: string; name: string; description: string }
 type MemberGenerationRecord = { id: string; member_id: string; generation_id: string; remark: string }
-type AdminMediaRecord = { id: string; title: string; type: 'image' | 'video'; activity_name: string | null; is_public: boolean }
+type AdminMediaRecord = { id: string; title: string; type: 'image' | 'video'; activity_name: string | null; taken_date: string | null; generation_id: string | null; is_public: boolean; asset_count: number }
 type AdminMessageRecord = { id: string; author_name: string; content: string; created_at: string }
+type AdminMediaEditForm = { title: string; activity_name: string; taken_date: string; generation_id: string; is_public: boolean; next_password: string }
 
 type MemberForm = {
   name: string
@@ -341,11 +342,100 @@ export function AdminTagsPage() {
 
 export function AdminMediaPage() {
   const [items, setItems] = useState<AdminMediaRecord[]>([])
+  const [generations, setGenerations] = useState<GenerationRecord[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<AdminMediaEditForm>({ title: '', activity_name: '', taken_date: '', generation_id: '', is_public: true, next_password: '' })
   const [error, setError] = useState('')
-  async function loadMedia() { if (!supabase) { setError('尚未配置 Supabase，无法管理媒体。'); return } const { data, error: loadError } = await supabase.from('media_items').select('id,title,type,activity_name,is_public').order('created_at', { ascending: false }); if (loadError) setError(loadError.message); else { setItems(data ?? []); setError('') } }
+
+  async function loadMedia() {
+    if (!supabase) { setError('尚未配置 Supabase，无法管理媒体。'); return }
+    const [mediaResult, generationResult, assetResult] = await Promise.all([
+      supabase.from('media_items').select('id,title,type,activity_name,taken_date,generation_id,is_public').order('created_at', { ascending: false }),
+      supabase.from('generations').select('id,name,year,description,cover_image,slogan').order('year', { ascending: false }),
+      supabase.from('media_item_assets').select('media_item_id'),
+    ])
+
+    const firstError = mediaResult.error ?? generationResult.error ?? assetResult.error
+    if (firstError) {
+      setError(firstError.message)
+      return
+    }
+
+    const countByMediaId = (assetResult.data ?? []).reduce<Record<string, number>>((result, asset) => {
+      result[asset.media_item_id] = (result[asset.media_item_id] ?? 0) + 1
+      return result
+    }, {})
+
+    setItems((mediaResult.data ?? []).map((item) => ({ ...item, asset_count: countByMediaId[item.id] ?? 0 })))
+    setGenerations(generationResult.data ?? [])
+    setError('')
+  }
+
   useEffect(() => { loadMedia() }, [])
+
+  function startEdit(item: AdminMediaRecord) {
+    setEditingId(item.id)
+    setForm({
+      title: item.title,
+      activity_name: item.activity_name ?? '',
+      taken_date: item.taken_date ?? '',
+      generation_id: item.generation_id ?? '',
+      is_public: item.is_public,
+      next_password: '',
+    })
+  }
+
+  async function saveMedia(event: React.FormEvent) {
+    event.preventDefault()
+    if (!supabase || !editingId) return
+
+    const { error: updateError } = await supabase.from('media_items').update({
+      title: form.title,
+      activity_name: form.activity_name || null,
+      taken_date: form.taken_date || null,
+      generation_id: form.generation_id || null,
+      year: form.taken_date ? Number(form.taken_date.slice(0, 4)) : null,
+      tags: form.taken_date ? [form.taken_date] : [],
+      is_public: form.is_public,
+      updated_at: new Date().toISOString(),
+    }).eq('id', editingId)
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    if (form.next_password) {
+      const { error: passwordError } = await supabase.rpc('admin_update_media_edit_password', {
+        media_id: editingId,
+        new_password: form.next_password,
+      })
+      if (passwordError) {
+        setError(passwordError.message)
+        return
+      }
+    }
+
+    setEditingId(null)
+    setForm({ title: '', activity_name: '', taken_date: '', generation_id: '', is_public: true, next_password: '' })
+    await loadMedia()
+  }
+
   async function deleteMedia(id: string) { if (!supabase || !window.confirm('确定删除这条媒体记录吗？')) return; const { error: deleteError } = await supabase.from('media_items').delete().eq('id', id); if (deleteError) setError(deleteError.message); else await loadMedia() }
-  return <ActionAdminTable title="媒体管理" error={error} headers={['标题', '类型', '上传者', '公开']} rows={items.map((item) => ({ id: item.id, cells: [item.title, item.type === 'video' ? '视频' : '图片', item.activity_name ?? '', item.is_public ? '是' : '否'] }))} onDelete={deleteMedia} />
+
+  return <div className="admin-page">
+    <div className="section-title"><h1>媒体管理</h1><span>{items.length} 条记录</span></div>
+    {error && <section className="section-card status-warn">{error}</section>}
+    {editingId && <section className="section-card form-card"><h2>编辑媒体</h2><form className="generation-form" onSubmit={saveMedia}>
+      <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="标题" required />
+      <input value={form.activity_name} onChange={(event) => setForm({ ...form, activity_name: event.target.value })} placeholder="上传者姓名" />
+      <input value={form.taken_date} onChange={(event) => setForm({ ...form, taken_date: event.target.value })} type="date" />
+      <select value={form.generation_id} onChange={(event) => setForm({ ...form, generation_id: event.target.value })}><option value="">不关联届次</option>{generations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+      <label><input type="checkbox" checked={form.is_public} onChange={(event) => setForm({ ...form, is_public: event.target.checked })} /> 公开显示</label>
+      <input value={form.next_password} onChange={(event) => setForm({ ...form, next_password: event.target.value })} placeholder="重置编辑密码（可选）" />
+      <div className="form-actions"><button>保存修改</button><button type="button" className="secondary-button" onClick={() => setEditingId(null)}>取消编辑</button></div>
+    </form></section>}
+    <div className="table-wrap"><table><thead><tr><th>标题</th><th>类型</th><th>上传者</th><th>届次</th><th>文件数</th><th>公开</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.title}</td><td>{item.type === 'video' ? '视频' : '图片'}</td><td>{item.activity_name ?? ''}</td><td>{generations.find((generation) => generation.id === item.generation_id)?.name ?? ''}</td><td>{item.asset_count}</td><td>{item.is_public ? '是' : '否'}</td><td><button onClick={() => startEdit(item)}>编辑</button><button className="danger" onClick={() => deleteMedia(item.id)}>删除</button></td></tr>)}</tbody></table></div>
+  </div>
 }
 
 export function AdminMessagesPage() {

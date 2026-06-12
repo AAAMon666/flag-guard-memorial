@@ -74,9 +74,9 @@ export function GenerationDetailPage() {
           <div className="card-grid three">
             {media.map((item) => (
               <article className="media-card" key={item.id}>
-                {item.cover_url || item.file_url ? <img src={item.cover_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无封面</div>}
+                {item.assets[0]?.cover_url || item.assets[0]?.file_url || item.cover_url || item.file_url ? <img src={item.assets[0]?.cover_url ?? item.assets[0]?.file_url ?? item.cover_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无封面</div>}
                 <strong>{item.title}</strong>
-                <span>{item.type === 'video' ? '视频' : '图片'} · 上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
+                <span>{item.type === 'video' ? '视频' : `图片 · 共 ${item.asset_count} 张`} · 上传者：{item.activity_name ?? '未填写'} · 日期：{item.taken_date ?? item.year ?? '未填写'}</span>
               </article>
             ))}
           </div>

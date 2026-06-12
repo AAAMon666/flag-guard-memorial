@@ -42,6 +42,15 @@ export type PublicMedia = {
   year: number | null
   tags: string[]
   is_public: boolean
+  updated_at?: string
+  asset_count: number
+  assets: Array<{
+    id: string
+    file_url: string
+    cover_url: string | null
+    asset_type: 'image' | 'video'
+    sort_order: number
+  }>
 }
 
 export type PublicMessage = {
@@ -95,7 +104,7 @@ export function formatStorageSize(bytes: number) {
 export async function loadPublicData() {
   if (!supabase) throw new Error('尚未配置 Supabase。')
 
-  const [generations, members, colleges, majors, classes, tags, memberGenerations, memberGenerationTags, media, messages, settings] = await Promise.all([
+  const [generations, members, colleges, majors, classes, tags, memberGenerations, memberGenerationTags, media, mediaAssets, messages, settings] = await Promise.all([
     supabase.from('generations').select('id,name,year,description,cover_image,slogan').order('year', { ascending: false }),
     supabase.from('members').select('id,name,college_id,major_id,class_id,phone,gender,retired_status,avatar,bio').order('created_at', { ascending: false }),
     supabase.from('colleges').select('id,name').order('name'),
@@ -104,13 +113,42 @@ export async function loadPublicData() {
     supabase.from('identity_tags').select('id,name,description').order('name'),
     supabase.from('member_generations').select('id,member_id,generation_id,remark'),
     supabase.from('member_generation_tags').select('member_generation_id,identity_tag_id'),
-    supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,member_id,activity_name,taken_date,year,tags,is_public').eq('is_public', true).order('created_at', { ascending: false }),
+    supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,member_id,activity_name,taken_date,year,tags,is_public,updated_at').eq('is_public', true).order('created_at', { ascending: false }),
+    supabase.from('media_item_assets').select('id,media_item_id,file_url,cover_url,asset_type,sort_order').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('messages').select('id,content,author_name,member_id,generation_id,status,created_at').eq('status', 'approved').order('created_at', { ascending: false }),
     loadSettings(),
   ])
 
-  const firstError = generations.error ?? members.error ?? colleges.error ?? majors.error ?? classes.error ?? tags.error ?? memberGenerations.error ?? memberGenerationTags.error ?? media.error ?? messages.error
+  const firstError = generations.error ?? members.error ?? colleges.error ?? majors.error ?? classes.error ?? tags.error ?? memberGenerations.error ?? memberGenerationTags.error ?? media.error ?? mediaAssets.error ?? messages.error
   if (firstError) throw firstError
+
+  const assetsByMediaId = (mediaAssets.data ?? []).reduce<Record<string, PublicMedia['assets']>>((result, asset) => {
+    if (!result[asset.media_item_id]) result[asset.media_item_id] = []
+    result[asset.media_item_id].push({
+      id: asset.id,
+      file_url: asset.file_url,
+      cover_url: asset.cover_url,
+      asset_type: asset.asset_type,
+      sort_order: asset.sort_order,
+    })
+    return result
+  }, {})
+
+  const normalizedMedia = (media.data ?? []).map((item) => {
+    const assets = assetsByMediaId[item.id] ?? (item.file_url ? [{
+      id: `${item.id}-legacy`,
+      file_url: item.file_url,
+      cover_url: item.cover_url,
+      asset_type: item.type,
+      sort_order: 0,
+    }] : [])
+
+    return {
+      ...item,
+      asset_count: assets.length,
+      assets,
+    }
+  })
 
   return {
     generations: generations.data ?? [],
@@ -121,7 +159,7 @@ export async function loadPublicData() {
     tags: tags.data ?? [],
     memberGenerations: memberGenerations.data ?? [],
     memberGenerationTags: memberGenerationTags.data ?? [],
-    media: media.data ?? [],
+    media: normalizedMedia,
     messages: messages.data ?? [],
     settings,
   }

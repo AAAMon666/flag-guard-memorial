@@ -104,9 +104,9 @@ export function MemberDetailPage() {
           <div className="card-grid three">
             {data.media.map((item) => (
               <article className="media-card" key={item.id}>
-                {item.cover_url || item.file_url ? <img src={item.cover_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无封面</div>}
+                {item.assets[0]?.cover_url || item.assets[0]?.file_url || item.cover_url || item.file_url ? <img src={item.assets[0]?.cover_url ?? item.assets[0]?.file_url ?? item.cover_url ?? item.file_url} alt={item.title} /> : <div className="media-placeholder">暂无封面</div>}
                 <strong>{item.title}</strong>
-                <span>{item.activity_name}</span>
+                <span>{item.activity_name}{item.type === 'image' && item.asset_count > 1 ? ` · 共 ${item.asset_count} 张` : ''}</span>
               </article>
             ))}
           </div>
