@@ -336,6 +336,12 @@ export function GeneratePage() {
 
       const nextProviderName = typeof data?.provider === 'string' ? data.provider : ''
       const nextModelName = typeof data?.model === 'string' ? data.model : ''
+      const usedResolution = data?.usedResolution === '1K' || data?.usedResolution === '2K' || data?.usedResolution === '4K'
+        ? data.usedResolution
+        : form.resolution
+      const usedQuality = data?.usedQuality === 'low' || data?.usedQuality === 'medium' || data?.usedQuality === 'high'
+        ? data.usedQuality
+        : form.quality
 
       setResults(
         Array.isArray(data?.images)
@@ -345,8 +351,8 @@ export function GeneratePage() {
               imageUrl: item.imageUrl,
               revisedPrompt: item.revisedPrompt ?? null,
               prompt: form.prompt,
-              resolution: form.resolution,
-              quality: form.quality,
+              resolution: usedResolution,
+              quality: usedQuality,
               mode,
               providerName: nextProviderName,
               modelName: nextModelName,
