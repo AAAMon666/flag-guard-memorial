@@ -70,7 +70,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const { loading, session } = useAuth()
 
   if (!hasSupabaseConfig) return <Navigate to="/login" replace />
-  if (loading) return <div className="page-stack narrow"><section className="section-card">姝ｅ湪妫€鏌ョ櫥褰曠姸鎬?..</section></div>
+  if (loading) return <div className="page-stack narrow"><section className="section-card">正在检查登录状态...</section></div>
   if (!session) return <Navigate to="/login" replace />
 
   return children
