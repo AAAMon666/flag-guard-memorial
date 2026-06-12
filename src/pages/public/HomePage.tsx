@@ -12,10 +12,37 @@ type HomeData = {
   messages: PublicMessage[]
 }
 
+type HeroSlide = {
+  id: string
+  imageUrl: string
+  title: string
+  subtitle: string
+}
+
+const heroSlideIntervalMs = 4500
+
+function buildHeroSlides(data: HomeData): HeroSlide[] {
+  return data.generations
+    .filter((generation) => /第三届|第四届/.test(generation.name))
+    .flatMap((generation) => (
+      generation.cover_image
+        ? [{
+            id: generation.id,
+            imageUrl: generation.cover_image,
+            title: generation.name,
+            subtitle: generation.slogan,
+          }]
+        : []
+    ))
+}
+
 export function HomePage() {
   const [data, setData] = useState<HomeData>({ generations: [], members: [], media: [], messages: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0)
+  const [isCarouselPaused, setIsCarouselPaused] = useState(false)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
 
   useEffect(() => {
     if (!hasSupabaseConfig) {
@@ -33,10 +60,34 @@ export function HomePage() {
       .finally(() => setLoading(false))
   }, [])
 
-  const latestGeneration = data.generations[0]
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const syncPreference = () => setPrefersReducedMotion(mediaQuery.matches)
+
+    syncPreference()
+    mediaQuery.addEventListener('change', syncPreference)
+    return () => mediaQuery.removeEventListener('change', syncPreference)
+  }, [])
+
+  const heroSlides = buildHeroSlides(data)
+  const activeSlide = heroSlides[activeSlideIndex] ?? heroSlides[0]
+
+  useEffect(() => {
+    setActiveSlideIndex(0)
+  }, [heroSlides.length])
+
+  useEffect(() => {
+    if (prefersReducedMotion || isCarouselPaused || heroSlides.length <= 1) return
+
+    const timer = window.setInterval(() => {
+      setActiveSlideIndex((current) => (current + 1) % heroSlides.length)
+    }, heroSlideIntervalMs)
+
+    return () => window.clearInterval(timer)
+  }, [heroSlides.length, isCarouselPaused, prefersReducedMotion])
 
   return (
-    <div className="page-stack">
+    <div className="page-stack home-page">
       {error && <section className="section-card status-warn">{error}</section>}
       <section className="hero-section">
         <div className="hero-copy">
@@ -48,9 +99,45 @@ export function HomePage() {
             <Link className="ghost-button" to="/members">认识队员</Link>
           </div>
         </div>
-        <div className="hero-card image-card">
-          {latestGeneration ? <img src={latestGeneration.cover_image ?? ''} alt={latestGeneration.name} /> : <div><strong>{loading ? '加载中...' : '暂无届次'}</strong></div>}
-          {latestGeneration && <div><strong>{latestGeneration.name}</strong><span>{latestGeneration.slogan}</span></div>}
+        <div
+          className="hero-card image-card hero-carousel"
+          onMouseEnter={() => setIsCarouselPaused(true)}
+          onMouseLeave={() => setIsCarouselPaused(false)}
+        >
+          {activeSlide ? (
+            <>
+              <div className="hero-slide-stage">
+                {heroSlides.map((slide, index) => (
+                  <img
+                    className={index === activeSlideIndex ? 'active' : ''}
+                    src={slide.imageUrl}
+                    alt={slide.title}
+                    loading={index === activeSlideIndex ? 'eager' : 'lazy'}
+                    key={slide.id}
+                  />
+                ))}
+              </div>
+              <div className="hero-slide-caption">
+                <strong>{activeSlide.title}</strong>
+                <span>{activeSlide.subtitle}</span>
+              </div>
+              {heroSlides.length > 1 && (
+                <div className="hero-carousel-dots" aria-label="首页图片轮播">
+                  {heroSlides.map((slide, index) => (
+                    <button
+                      type="button"
+                      className={index === activeSlideIndex ? 'active' : ''}
+                      aria-label={`切换到 ${slide.title}`}
+                      onClick={() => setActiveSlideIndex(index)}
+                      key={slide.id}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="hero-empty-state"><strong>{loading ? '加载中...' : '暂无图片'}</strong></div>
+          )}
         </div>
       </section>
 
