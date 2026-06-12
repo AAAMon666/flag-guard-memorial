@@ -151,11 +151,13 @@ button.danger { background: #6b1c1c; }
 .comment-list { display: grid; gap: 8px; }
 .comment-list p { margin: 0; padding: 10px 12px; border-radius: 12px; background: #fff7e6; color: #5d3330; }
 .comment-form { display: grid; grid-template-columns: 160px 1fr auto; gap: 8px; }
-.taxonomy-card { display: grid; gap: 14px; }
+.taxonomy-grid { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 18px; align-items: start; }
+.taxonomy-card { display: grid; grid-template-rows: auto auto minmax(0, 1fr); align-content: start; gap: 14px; min-height: 0; max-height: min(760px, calc(100vh - 230px)); }
 .taxonomy-form { display: grid; gap: 10px; }
-.taxonomy-list { display: grid; gap: 8px; }
-.taxonomy-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border-radius: 12px; background: #fff; border: 1px solid #ecd9ad; }
-.taxonomy-list button { padding: 6px 10px; box-shadow: none; }
+.taxonomy-list { display: grid; align-content: start; gap: 8px; min-height: 0; overflow: auto; padding-right: 4px; }
+.taxonomy-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 54px; padding: 10px; border-radius: 12px; background: #fff; border: 1px solid #ecd9ad; }
+.taxonomy-list span { min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.taxonomy-list button { flex: 0 0 auto; padding: 6px 10px; box-shadow: none; white-space: nowrap; }
 .settings-grid { display: grid; gap: 14px; }
 .settings-grid label { display: flex; align-items: center; gap: 10px; }
 .settings-grid input { width: auto; }
@@ -165,7 +167,7 @@ button.danger { background: #6b1c1c; }
 
 @media (max-width: 860px) {
   .site-header, .site-footer { flex-direction: column; align-items: flex-start; }
-  .hero-section, .split-grid, .card-grid.two, .card-grid.three, .metric-grid, .filter-panel, .member-grid, .media-grid, .admin-shell, .profile-hero { grid-template-columns: 1fr; }
+  .hero-section, .split-grid, .card-grid.two, .card-grid.three, .taxonomy-grid, .metric-grid, .filter-panel, .member-grid, .media-grid, .admin-shell, .profile-hero { grid-template-columns: 1fr; }
   .generation-card.large, .member-row { grid-template-columns: 1fr; }
   .detail-hero h1 { font-size: 42px; }
   .generation-form, .upload-form, .comment-form { grid-template-columns: 1fr; }
@@ -174,6 +176,7 @@ button.danger { background: #6b1c1c; }
   .site-header nav a { padding: 8px 10px; }
   .image-card { min-height: 340px; }
   .image-card img { height: 340px; }
+  .taxonomy-card { max-height: none; }
   .media-detail-gallery { grid-template-columns: 1fr; }
   .media-detail-photo img { height: auto; max-height: 70vh; }
 }
