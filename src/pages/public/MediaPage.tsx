@@ -5,6 +5,7 @@ import { defaultMediaStorageStatus, defaultSettings, formatStorageSize, loadMedi
 import type { MediaStorageStatus, PublicMedia, PublicSettings } from '../../lib/publicData'
 
 type GenerationOption = { id: string; name: string }
+type SortMode = 'takenDate' | 'uploadTime'
 
 type UploadForm = {
   title: string
@@ -40,6 +41,7 @@ function appendUniqueFiles(currentFiles: File[], nextFiles: File[]) {
 export function MediaPage() {
   const [type, setType] = useState('all')
   const [generationId, setGenerationId] = useState('')
+  const [sortMode, setSortMode] = useState<SortMode>('takenDate')
   const [generations, setGenerations] = useState<GenerationOption[]>([])
   const [mediaItems, setMediaItems] = useState<PublicMedia[]>([])
   const [settings, setSettings] = useState<PublicSettings>(defaultSettings)
@@ -50,7 +52,25 @@ export function MediaPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
-  const filteredMedia = useMemo(() => mediaItems.filter((item) => (type === 'all' || item.type === type) && (!generationId || item.generation_id === generationId)), [generationId, mediaItems, type])
+  const filteredMedia = useMemo(() => {
+    const getTime = (item: PublicMedia) => {
+      const fallbackTime = new Date(item.created_at).getTime()
+      const sortedTime = sortMode === 'uploadTime'
+        ? fallbackTime
+        : item.taken_date
+          ? new Date(item.taken_date).getTime()
+          : item.year
+            ? new Date(`${item.year}-01-01`).getTime()
+            : fallbackTime
+
+      return Number.isFinite(sortedTime) ? sortedTime : fallbackTime
+    }
+
+    return mediaItems
+      .filter((item) => (type === 'all' || item.type === type) && (!generationId || item.generation_id === generationId))
+      .slice()
+      .sort((current, next) => getTime(next) - getTime(current))
+  }, [generationId, mediaItems, sortMode, type])
   const uploadEnabled = form.type === 'image' ? settings.imageUploadEnabled : settings.videoUploadEnabled
   const fileLimit = form.type === 'image' ? imageLimit : videoLimit
   const hasStorageQuota = storageStatus.totalBytes > 0
@@ -226,6 +246,10 @@ export function MediaPage() {
         <select value={generationId} onChange={(event) => setGenerationId(event.target.value)}>
           <option value="">全部届次</option>
           {generations.map((generation) => <option key={generation.id} value={generation.id}>{generation.name}</option>)}
+        </select>
+        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+          <option value="takenDate">按填写日期排序</option>
+          <option value="uploadTime">按上传时间排序</option>
         </select>
       </section>
       <section className="media-grid">

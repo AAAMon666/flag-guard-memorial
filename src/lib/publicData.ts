@@ -42,6 +42,7 @@ export type PublicMedia = {
   year: number | null
   tags: string[]
   is_public: boolean
+  created_at: string
   updated_at?: string
   asset_count: number
   assets: Array<{
@@ -113,7 +114,7 @@ export async function loadPublicData() {
     supabase.from('identity_tags').select('id,name,description').order('name'),
     supabase.from('member_generations').select('id,member_id,generation_id,remark'),
     supabase.from('member_generation_tags').select('member_generation_id,identity_tag_id'),
-    supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,member_id,activity_name,taken_date,year,tags,is_public,updated_at').eq('is_public', true).order('created_at', { ascending: false }),
+    supabase.from('media_items').select('id,type,title,file_url,cover_url,generation_id,member_id,activity_name,taken_date,year,tags,is_public,created_at,updated_at').eq('is_public', true).order('created_at', { ascending: false }),
     supabase.from('media_item_assets').select('id,media_item_id,file_url,cover_url,asset_type,sort_order').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('messages').select('id,content,author_name,member_id,generation_id,status,created_at').eq('status', 'approved').order('created_at', { ascending: false }),
     loadSettings(),
